@@ -88,7 +88,7 @@ The skeleton must include:
 - Module declaration with the IP-level ports from the requirement
 - `wire` declarations for all inter-module interfaces defined in Step 2
 - One instantiation stub per submodule with port connections wired up
-- `//!` comments on any connection or signal that requires special attention during integration
+- `//@` comments on any connection or signal that requires special attention during integration
 
 No logic implementation — only port declarations, wire declarations, and instantiation stubs.
 

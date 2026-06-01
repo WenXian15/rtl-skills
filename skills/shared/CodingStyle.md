@@ -79,14 +79,14 @@ and blocking/non-blocking rules above still apply for readability.
 //==============================================================================
 ```
 
-## Design Direction Markers (`//!`)
+## Design Direction Markers (`//@`)
 
-`//!` comments are design-direction markers: instructions that tell `vfill` what
+`//@` comments are design-direction markers: instructions that tell `vfill` what
 logic to implement. They are temporary scaffolding, not permanent documentation.
 
 ### Syntax
 
-- A single-line comment whose leading token is `//!`. Write it as `//! <direction>`.
+- A single-line comment whose leading token is `//@`. Write it as `//@ <direction>`.
 - One direction per line, placed on its own line in the code section where the
   described logic belongs.
 
@@ -101,10 +101,10 @@ logic to implement. They are temporary scaffolding, not permanent documentation.
 - **Created by** `vdesign` in `rtl/<module>.v` backbones, and by `varch` as
   integration notes in `rtl/<ip>_top.v`.
 - **Consumed by** `vfill`: once the described logic is implemented, `vfill` must
-  convert every `//!` to a normal `//` comment (or remove it). No `//!` may
+  convert every `//@` to a normal `//` comment (or remove it). No `//@` may
   remain in a completed module.
 - `vflow` detects implementation completion (Phase 3) by the **absence** of
-  `//!` in `rtl/` excluding `_top.v`. A single stray `//!` keeps the module
+  `//@` in `rtl/` excluding `_top.v`. A single stray `//@` keeps the module
   marked IN PROGRESS, so an unconverted marker silently blocks the flow.
 - Integration markers in `rtl/<ip>_top.v` are excluded from Phase 3 detection;
   they are resolved during IP integration, not during submodule fill.

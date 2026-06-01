@@ -14,7 +14,7 @@ This guide defines the workflow for implementing a Verilog module from an approv
 
 Before starting, read:
 
-1. The target Verilog source file — for `//!` annotations and port declarations
+1. The target Verilog source file — for `//@` annotations and port declarations
 2. The proposal file `./ddoc/<module_name>_proposal.md` (same folder as the requirement file) — this is the source of truth for the implementation
 
 ## Prerequisites
@@ -43,7 +43,7 @@ Do not read RTL code unless additional information is required to understand the
 After completing the Verilog code:
 
 1. Record the design updates and important notes in the proposal file. This information will help understand the module's functionality and behavior, and can be used during the debugging phase.
-2. Convert all `//!` annotations to regular `//` comments.
+2. Convert all `//@` annotations to regular `//` comments.
 
 ## Step 2 - Clean the Code
 

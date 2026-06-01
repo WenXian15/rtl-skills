@@ -13,7 +13,7 @@ The input is a `.md` requirement file that describes what the module should do, 
 
 1. A proposal file with function description, architecture and algorithm if applicable
 2. A design documentation file
-3. A backbone Verilog file with `//!` direction comments, ready for implementation by `vfill`
+3. A backbone Verilog file with `//@` direction comments, ready for implementation by `vfill`
 
 ### Module Name Derivation
 
@@ -103,7 +103,7 @@ This skill generates backbones for submodules only. The top-level integration sk
 The backbone must include:
 
 - Module declaration with all ports from the proposal
-- `//!` direction comments that guide `vfill` on what to implement in each section
+- `//@` direction comments that guide `vfill` on what to implement in each section
 - Section dividers using the standard comment block format
 - Empty logic bodies — no implementation
 
@@ -126,21 +126,21 @@ module foo #(
     output reg               m_valid
 );
 
-//! implement the input handshake logic here
+//@ implement the input handshake logic here
 
 //==============================================================================
 // Stage 0 - Input Register
 //==============================================================================
 
-//! register s_data and s_valid into s0_data_ff and s0_valid_ff
+//@ register s_data and s_valid into s0_data_ff and s0_valid_ff
 
 //==============================================================================
 // Stage 1 - Output
 //==============================================================================
 
-//! compute m_data from s0_data_ff and drive m_valid
+//@ compute m_data from s0_data_ff and drive m_valid
 
 endmodule
 ```
 
-The `//!` comments must be specific enough for `vfill` to implement the correct behavior without further design decisions. They must follow the marker grammar and lifecycle defined in `.claude/skills/shared/CodingStyle.md` — in particular, a marker must never contain Verilog code.
+The `//@` comments must be specific enough for `vfill` to implement the correct behavior without further design decisions. They must follow the marker grammar and lifecycle defined in `.claude/skills/shared/CodingStyle.md` — in particular, a marker must never contain Verilog code.

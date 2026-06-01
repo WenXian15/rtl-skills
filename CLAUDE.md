@@ -69,7 +69,7 @@ ip_req.md
   ├─[varch]──► ddoc/<submodule>_req.md  (one per submodule)
   │            rtl/<ip>_top.v           (instantiation skeleton)
   │
-  ├─[vdesign]─► rtl/<module>.v          (backbone with //! directions)
+  ├─[vdesign]─► rtl/<module>.v          (backbone with //@ directions)
   │             ddoc/<module>_proposal.md (architecture + algorithm)
   │             doc/<module>.md         (module documentation)
   │
@@ -100,7 +100,7 @@ ip_req.md
 | Skill     | Purpose |
 |-----------|---------|
 | `varch`   | Decompose an IP requirement into submodules; generate per-module `ddoc/` requirement files and a top-level skeleton |
-| `vdesign` | Generate a design proposal, module documentation, and RTL backbone with `//!` directions from a requirement file |
+| `vdesign` | Generate a design proposal, module documentation, and RTL backbone with `//@` directions from a requirement file |
 | `vfill`   | Implement the Verilog code from an approved proposal, then lint and simulate |
 | `vexplain`| Generate documentation for any RTL module from its Verilog source |
 | `vdoc`    | Aggregate all per-module documentation into a single IP-level document |
@@ -125,7 +125,7 @@ ip_req.md
 
 ## Conventions
 
-- `//!` comments in RTL files are design direction markers for `vfill`. Do not remove them until the implementation is complete. Their grammar and lifecycle are defined in `.claude/skills/shared/CodingStyle.md`.
+- `//@` comments in RTL files are design direction markers for `vfill`. Do not remove them until the implementation is complete. Their grammar and lifecycle are defined in `.claude/skills/shared/CodingStyle.md`.
 - Coding style rules are defined in `.claude/skills/shared/CodingStyle.md`.
 - Module documentation must follow `.claude/skills/shared/ModuleDocContract.md` so docs are usable without reading RTL.
 - Reset: always synchronous; active-low by default; use `RS_LV` parameter when configurable.

@@ -24,15 +24,15 @@ Run the following checks to determine the completion status of each phase. All f
 |-------|--------------|--------------|
 | 1 – Architecture | `ddoc/` contains at least one `_req.md` AND `rtl/<ip>_top.v` exists | Either is missing |
 | 2 – Design | Every `ddoc/<module>_req.md` has a corresponding `rtl/<module>.v` | Any req file lacks an RTL file |
-| 3 – Implementation | No `rtl/*.v` file (excluding `_top.v`) contains a `//!` marker | Any RTL file still has `//!` markers |
+| 3 – Implementation | No `rtl/*.v` file (excluding `_top.v`) contains a `//@` marker | Any RTL file still has `//@` markers |
 | 4 – Synthesis | `synth/<ip>/synth_report.md` exists | File is absent |
 | 5 – IP Testing | `issue/<ip>/run_summary.md` exists | File is absent |
 | 6 – Debug | `issue/<ip>/debug_summary.md` exists OR `run_summary.md` shows zero failures | Debug not yet run and failures exist |
 | 7 – Documentation | `doc/<ip>.md` exists | File is absent |
 
-To detect `//!` markers:
+To detect `//@` markers:
 ```bash
-grep -rl '//!' rtl/
+grep -rl '//@' rtl/
 ```
 
 To check failure count in run_summary:
@@ -95,7 +95,7 @@ Process submodules one at a time. Do not batch-approve.
 
 **Invoke when:** Phase 3 is PENDING or IN PROGRESS.
 
-For each `rtl/<module>.v` other than `<ip>_top.v` that still contains `//!` markers, run `vfill`. The top-level skeleton is structural only — its `//!` entries are integration notes (resolved during IP integration), not logic-fill directions, so `vfill` is never run on `<ip>_top.v`.
+For each `rtl/<module>.v` other than `<ip>_top.v` that still contains `//@` markers, run `vfill`. The top-level skeleton is structural only — its `//@` entries are integration notes (resolved during IP integration), not logic-fill directions, so `vfill` is never run on `<ip>_top.v`.
 
 Process all pending submodules sequentially without checkpoints. If `vfill` fails lint or simulation for a submodule, report the failure and pause — do not continue to other submodules while lint/sim errors are unresolved.
 
