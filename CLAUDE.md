@@ -129,6 +129,6 @@ ip_req.md
 - Coding style rules are defined in `.claude/skills/shared/CodingStyle.md`.
 - Module documentation must follow `.claude/skills/shared/ModuleDocContract.md` so docs are usable without reading RTL.
 - Reset: always synchronous; active-low by default; use `RS_LV` parameter when configurable.
-- Synthesizable code in `rtl/` and `lib/` must be Verilog-2001 compatible — no SystemVerilog constructs. Testbench code under `tb/` is exempt and may use SystemVerilog (`.sv`); see `.claude/skills/shared/CodingStyle.md`.
+- Synthesizable code in `rtl/` and `lib/` must be Verilog-2005 (IEEE 1364-2005) compatible — no SystemVerilog (IEEE 1800) constructs. Testbench code under `tb/` is exempt and may use SystemVerilog (`.sv`); see `.claude/skills/shared/CodingStyle.md`.
 - IP-level testcases end with the verdict token `[FINISH] PASS` / `[FINISH] FAIL`; `vtestrun` and the bench Makefiles decide pass/fail from this token only.
 - External-tool availability: each skill lists its required tools in a Prerequisites table. If a required tool (Verilator, xvlog/xelab/xsim, Vivado) is not installed, stop and report which tool is missing — never fabricate lint, simulation, or synthesis results. Within `vflow`, mark the dependent phase `✗ BLOCKED (tool unavailable: <tool>)` and continue scanning the other phases.

@@ -329,7 +329,7 @@ produce a clean `[FINISH]` after 2 attempts).
 - **Width-generic** `sti_*.sv`, `sco_*.sv`, and `dut.vh` sequences — never hardcode the data width.
 - **Scoreboards are CPU-slave observers:** a `sco_*.sv` taps a DUT output and never drives it; it is configured/read over the CPU bus like any other slave.
 - **Reusable sequences live in `dut.vh`**, not in testcases.
-- Testbench is SystemVerilog under `tb/`; RTL stays Verilog-2001.
+- Testbench is SystemVerilog under `tb/`; RTL stays Verilog-2005.
 
 ## Known Issues and Fixes
 
