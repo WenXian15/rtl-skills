@@ -25,6 +25,7 @@ The input is an IP name. The outputs are:
 tb/<ip>/Makefile              top dispatcher (auto-discovers tb_*.sv)
 tb/<ip>/script/library.mk     per-testcase xvlog/xelab/xsim recipe
 tb/<ip>/script/rtl.f          generated RTL hierarchy filelist
+tb/<ip>/script/skip.list      names of skipped testcases, excluded by the Makefile
 tb/<ip>/clock.vh              parameterized clock + sync-reset generators
 tb/<ip>/dut.vh                reg-map, DUT signals/instance, sti instances, CPU BFM tasks + sequences
 tb/<ip>/sti_<iface>.sv        one CPU-controllable stimulus driver per data interface
@@ -240,8 +241,10 @@ For each planned testcase, create `tb/<ip>/tb_<category>_<name>.sv` by expanding
 
 Each testcase must:
 
-- declare the clock-period params (`T_*`), `RS_LV`, the cpu access latencies
-  (`CPU_WR_LAT`, `CPU_RD_LAT`), and clk/rst regs, then `` `include "clock.vh" ``;
+- declare the clock-period params (`T_*`), `RS_LV` (set to the DUT's own `RS_LV`
+  default parsed from `<ip>_top`, so the bench resets at the DUT's polarity), the
+  cpu access latencies (`CPU_WR_LAT`, `CPU_RD_LAT`), and clk/rst regs, then
+  `` `include "clock.vh" ``;
 - declare the DUT parameters, then `` `include "dut.vh" ``;
 - contain a watchdog `initial` that prints `[FINISH] FAIL` on timeout;
 - have a single test-script `initial` block that uses **only** the reusable
@@ -281,20 +284,29 @@ make tb_<category>_<name>
 ```
 
 This compiles RTL + `sti_*.sv` + the one testcase, elaborates, and simulates under a
-timeout. The self-check passes when `sim/tb_<category>_<name>/simulate.log` contains
-`[FINISH] PASS`.
+timeout.
 
-| Failure | Action |
-|---------|--------|
-| compile error (xvlog)    | fix signal name/width/port-map in `dut.vh` or the sti module; rerun |
-| elaborate error (xelab)  | add the missing RTL/lib file to `rtl.f`; confirm each `sti_*.sv` compiled; rerun |
-| sim timeout              | stimulus never started or DUT stalled — check the `cpu_write` enable sequence / handshake |
-| no `[FINISH]` token      | testcase ended without printing the verdict — fix the result block |
-| `[FINISH] FAIL` (real)   | for a starter/basic testcase, fix the expected value; if the mismatch is a genuine DUT bug, that is a finding for vtestrun/vdebug — record it and continue |
+**The self-check is a structural gate, not a verdict.** It passes when the testcase
+produces a clean `[FINISH]` token — `PASS` **or** `FAIL` — within the timeout. The
+goal is a well-formed, runnable testcase, not a passing DUT. Determining the
+authoritative pass/fail is `vtestrun`'s job. Do **not** tune a testcase to force
+`[FINISH] PASS`: that can hide a real DUT bug.
 
-Maximum 2 rewrite attempts per testcase. If still failing to even produce a clean
-`[FINISH]` (compile/elab/timeout) after 2 attempts, record it as `SKIPPED` in
-`tc_list.md` and continue. Do not block the suite on one testcase.
+> Re-run note: `make tb_<name>` is a no-op while a `simulate.log` already exists for
+> that testcase. After editing, clear the stale result first — `make cleanf` (drops
+> non-PASS sim dirs) or `rm -rf sim/tb_<name>` — then re-run.
+
+| Result | Action |
+|--------|--------|
+| compile error (xvlog)    | fix signal name/width/port-map in `dut.vh` or the sti module; clear + rerun |
+| elaborate error (xelab)  | add the missing RTL/lib file to `rtl.f`; confirm each `sti_*.sv` compiled; clear + rerun |
+| sim timeout (no `[FINISH]`) | stimulus never started or DUT stalled — check the `cpu_write` enable sequence / handshake; clear + rerun |
+| no `[FINISH]` token      | testcase ended without printing the verdict — fix the result block; clear + rerun |
+| `[FINISH] FAIL`          | the testcase ran cleanly — self-check **passes**. First confirm the testcase's own expected value is correct: if it is wrong, fix it; if the expected value is right and the DUT disagrees, leave it — that is a real finding for `vtestrun`/`vdebug`. Either way mark the testcase `OK`. |
+
+Maximum 2 rewrite attempts per testcase. If after 2 attempts it still cannot produce
+a clean `[FINISH]` (compile/elaborate error, or timeout with no token), record it as
+`SKIPPED` in `tc_list.md` and continue. Do not block the suite on one testcase.
 
 ## Step B4 - Write the testcase list
 
@@ -306,7 +318,9 @@ After all testcases are written and self-checked, write `tb/<ip>/tc_list.md`:
 ## Bench
 
 Makefile-driven project at `tb/<ip>/`. Run a testcase with `make tb_<name>`;
-summarize with `make report`. RTL filelist: `tb/<ip>/script/rtl.f`.
+summarize with `make report`. RTL filelist: `tb/<ip>/script/rtl.f`. `SKIPPED`
+testcases are mirrored into `tb/<ip>/script/skip.list`, which the Makefile excludes
+from `make`/`make report` (the `.sv` files stay in place).
 
 ## Testcases
 
@@ -317,8 +331,19 @@ summarize with `make report`. RTL filelist: `tb/<ip>/script/rtl.f`.
 | 3 | tb_edge_empty.sv | tb_edge_empty | Edge | Empty input condition | SKIPPED |
 ```
 
-Status values: `OK` (self-check produced `[FINISH] PASS`), `SKIPPED` (could not
-produce a clean `[FINISH]` after 2 attempts).
+Status values: `OK` (well-formed testcase — self-check produced a clean `[FINISH]`,
+PASS or FAIL), `SKIPPED` (could not produce a clean `[FINISH]` after 2 attempts).
+A testcase whose `[FINISH] FAIL` reflects a real DUT bug is still `OK` here — the
+failure is reported by `vtestrun`, not hidden at generation time.
+
+Then **regenerate** `tb/<ip>/script/skip.list` as a mirror of the current `SKIPPED`
+rows: overwrite it with exactly the testcase names (e.g. `tb_edge_empty`) whose
+status is `SKIPPED`, one per line. Always rewrite from the current `tc_list.md` —
+do not append. This way a previously-skipped testcase that now self-checks clean is
+`OK` in `tc_list`, so it drops out of `skip.list` automatically and the Makefile
+runs it again; a testcase still skipped stays excluded. `tc_list.md` is the single
+source of truth; `skip.list` is just its machine-readable projection for the
+Makefile. If no testcase is skipped, write an empty `skip.list` (or omit it).
 
 ## Conventions (must hold)
 

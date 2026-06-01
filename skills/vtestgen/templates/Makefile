@@ -25,8 +25,11 @@ else
 	NC:=
 endif
 
-# every tb/tb_*.sv is auto-discovered as a runnable testcase
-TESTCASE            := $(subst $(TB_FOLDER)/,,$(subst .sv,, $(wildcard $(TB_FOLDER)/tb_*)))
+# every tb/tb_*.sv is auto-discovered as a runnable testcase, minus any listed in
+# script/skip.list (testcases that failed vtestgen's self-check). One name per
+# line, '#' starts a comment. The .sv files are left in place, just not run.
+SKIP_LIST           := $(if $(wildcard $(SCRIPT_FOLDER)/skip.list),$(shell sed 's/#.*//' $(SCRIPT_FOLDER)/skip.list))
+TESTCASE            := $(filter-out $(SKIP_LIST),$(subst $(TB_FOLDER)/,,$(subst .sv,, $(wildcard $(TB_FOLDER)/tb_*))))
 TB_DEPENDENCIES     += $(wildcard $(TB_FOLDER)/*.vh)
 TB_DEPENDENCIES     += $(wildcard $(TB_FOLDER)/sti_*.sv)
 TB_DEPENDENCIES     += $(wildcard $(TB_FOLDER)/sco_*.sv)

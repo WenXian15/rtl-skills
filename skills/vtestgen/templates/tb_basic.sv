@@ -9,7 +9,11 @@ module tb_{{MODULE}}_basic;
 
     //----- clock periods + reset level (consumed by clock.vh) ----------------
 {{CLK_PARAMS}}
-    parameter RS_LV = 1;
+    // RS_LV = reset active level (1-bit). vtestgen sets this to the DUT's own
+    // RS_LV default (parsed from <ip>_top) so the bench drives reset at the
+    // polarity the DUT expects; the project default is 1'b0 (active-low). Keep
+    // it 1-bit so the `=== ~RS_LV` reset-release compare below stays bit-accurate.
+    parameter RS_LV = 1'b0;
 
     //----- cpu access latency (cpu clocks the bus is held per access) --------
     // default 1 = single-cycle access; raise for a slave that needs more cycles
@@ -41,8 +45,8 @@ module tb_{{MODULE}}_basic;
     initial begin
         cpu_cs = 0; cpu_we = 0; cpu_oe = 0; cpu_addr = 0; cpu_din = 0;
 
-        // wait reset release
-        @(negedge rst_n_{{SYS_CLK}});
+        // wait reset release (polarity-agnostic: the deasserted level is ~RS_LV)
+        wait (rst_n_{{SYS_CLK}} === ~RS_LV);
         #(100*T_{{CPU_CLK_UPPER}});
 
         // --- example: configure the DUT via its register map ----------------

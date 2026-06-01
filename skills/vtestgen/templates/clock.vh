@@ -11,8 +11,9 @@
         #(T_{{CLK_UPPER}}/2) {{CLK}} = ~{{CLK}};
 
     // ----- synchronous resets ------------------------------------------------
-    // One reset per clock domain. Active level is RS_LV (default 1 = active-high
-    // assert, deassert to ~RS_LV). De-assert after 10 clock periods.
+    // One reset per clock domain, named rst_n_<clk>. Active level is RS_LV
+    // (default 0 = active-low: assert to RS_LV, deassert to ~RS_LV).
+    // De-assert after 10 clock periods.
     initial begin
         {{RST}} = RS_LV;
         #(10*T_{{CLK_UPPER}});
