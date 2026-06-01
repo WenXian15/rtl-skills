@@ -1,6 +1,8 @@
 ---
 name: vexplain
 description: Generate documentation for any RTL module from Verilog source files
+effort: medium
+allowed-tools: Read, Write
 ---
 
 # Verilog Reader
@@ -33,23 +35,13 @@ Output file rules:
 - If the target file is under `./rtl`, place the output in `./doc/`.
 - If the target file is under `./lib`, place the output in the same folder as the Verilog file.
 
-## Required Content
+## Required and Excluded Content
 
-The generated documentation must include:
+The generated documentation must follow the module documentation contract defined
+in `.claude/skills/shared/ModuleDocContract.md`, including its Excluded Content
+rules.
 
-- Module overview
-- Parameter descriptions, if applicable
-- Input and Output port descriptions
-- Functional description of the module
-- Basic algorithm description, if applicable
-
-Use mermaid format to draw FSM state and Algorithm flow, if applicable.
-
-## Excluded Content
-
-The generated documentation must not include:
-
-- Detailed implementation internals
-- Line-by-line code explanation
-- Redundant documentation for submodules that are already documented elsewhere
-- Information unrelated to the behavior or interface of the target module
+Populate every required section of that contract by reading the Verilog source:
+extract the port table (name, direction, width, reset value) and parameters
+directly from the module declaration, and derive reset behavior, timing
+characteristics, and any FSM/algorithm from the implemented logic.

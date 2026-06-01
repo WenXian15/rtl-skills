@@ -49,12 +49,12 @@ For each new submodule (excluding reused library modules), generate a requiremen
 
 Output file rules:
 
-- Use the submodule name as the file name
+- Use the submodule name with a `_req` suffix as the file name
 - Use the `.md` extension
 
 Example:
 
-- submodule `foo_ctrl` → `./ddoc/foo_ctrl.md`
+- submodule `foo_ctrl` → `./ddoc/foo_ctrl_req.md`
 
 ### Required Content for Each Requirement File
 

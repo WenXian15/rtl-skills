@@ -18,13 +18,13 @@ Locate and read all of the following sources for the target IP:
 | Source | Location | Content |
 |--------|----------|---------|
 | Requirements | `./ddoc/<module>_req.md` | Original per-module requirements |
-| Proposals | `<module>_proposal.md` (same folder as RTL) | Architecture, algorithm, timing diagrams |
+| Proposals | `./ddoc/<module>_proposal.md` | Architecture, algorithm, timing diagrams |
 | Module docs | `./doc/<module>.md` | Per-module interface and functional description |
 | Top-level skeleton | `./rtl/<ip_name>_top.v` | Top-level ports and inter-module wiring |
 | Library module docs | `./lib/**/<module>.md` | Reused library module documentation |
 | Synthesis report | `./synth/<ip_name>/synth_report.md` | Utilization, Fmax, and power (optional) |
 
-Build a list of all submodules in the IP from the top-level skeleton.
+Build a list of all submodules in the IP by walking the instantiation hierarchy from the top-level skeleton, following the shared procedure in `.claude/skills/shared/HierarchyFilelist.md`.
 
 ## Step 2 - Detect and Fill Documentation Gaps
 

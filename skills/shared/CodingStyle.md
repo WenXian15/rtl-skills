@@ -1,4 +1,3 @@
-
 # Verilog Coding Style
 
 The following rules must be followed.
@@ -58,9 +57,16 @@ localparam FSM_IDLE   = 'd0,
 
 ## Language Standard
 
+These rules apply to **synthesizable code in `rtl/` and `lib/`**:
+
 - Write in Verilog-2001. Do not use SystemVerilog constructs.
 - Use `reg` and `wire` declarations, not `logic`.
 - Use `always @(posedge clk)` and `always @(*)`, not `always_ff` or `always_comb`.
+
+**Testbench code under `tb/` is exempt.** Benches are not synthesized, so
+SystemVerilog (`.sv`) is permitted there — this is the language of the
+`vtestgen` bench (`dut.vh`, `clock.vh`, `sti_*.sv`, `tb_*.sv`). Synchronous-reset
+and blocking/non-blocking rules above still apply for readability.
 
 ## Comment
 
@@ -72,3 +78,49 @@ localparam FSM_IDLE   = 'd0,
 // <code section>
 //==============================================================================
 ```
+
+## Design Direction Markers (`//!`)
+
+`//!` comments are design-direction markers: instructions that tell `vfill` what
+logic to implement. They are temporary scaffolding, not permanent documentation.
+
+### Syntax
+
+- A single-line comment whose leading token is `//!`. Write it as `//! <direction>`.
+- One direction per line, placed on its own line in the code section where the
+  described logic belongs.
+
+### Content
+
+- Plain-English design intent only — describe *what* to implement, never *how*.
+- A marker must never contain Verilog code: no assignments, expressions, or
+  operators that form valid RTL. Refer to signals by name in prose instead.
+
+### Lifecycle
+
+- **Created by** `vdesign` in `rtl/<module>.v` backbones, and by `varch` as
+  integration notes in `rtl/<ip>_top.v`.
+- **Consumed by** `vfill`: once the described logic is implemented, `vfill` must
+  convert every `//!` to a normal `//` comment (or remove it). No `//!` may
+  remain in a completed module.
+- `vflow` detects implementation completion (Phase 3) by the **absence** of
+  `//!` in `rtl/` excluding `_top.v`. A single stray `//!` keeps the module
+  marked IN PROGRESS, so an unconverted marker silently blocks the flow.
+- Integration markers in `rtl/<ip>_top.v` are excluded from Phase 3 detection;
+  they are resolved during IP integration, not during submodule fill.
+
+## Testbench Verdict Token
+
+Every `vtestgen` testcase ends by printing exactly one verdict token, then
+`$finish`:
+
+- `[FINISH] PASS` when the testcase passed.
+- `[FINISH] FAIL` on any mismatch or timeout. The shared `cpu_read_check` task
+  emits `[FINISH] FAIL` automatically on a read mismatch.
+
+This token — not the presence of any `[ERROR]` text — is the single
+machine-readable result. The bench Makefiles and `vtestrun` decide pass/fail by
+grepping for `FINISH` and reading the following word; absence of the token is
+treated as FAIL (crash, or never reached the result line). Diagnostic context is
+printed on `[ERROR] time= ... ` lines, which `vtestrun` harvests into issue
+reports but does not use for the pass/fail decision.

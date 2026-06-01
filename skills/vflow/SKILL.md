@@ -95,7 +95,7 @@ Process submodules one at a time. Do not batch-approve.
 
 **Invoke when:** Phase 3 is PENDING or IN PROGRESS.
 
-For each `rtl/<module>.v` that still contains `//!` markers, run `vfill`.
+For each `rtl/<module>.v` other than `<ip>_top.v` that still contains `//!` markers, run `vfill`. The top-level skeleton is structural only — its `//!` entries are integration notes (resolved during IP integration), not logic-fill directions, so `vfill` is never run on `<ip>_top.v`.
 
 Process all pending submodules sequentially without checkpoints. If `vfill` fails lint or simulation for a submodule, report the failure and pause — do not continue to other submodules while lint/sim errors are unresolved.
 
@@ -145,10 +145,9 @@ State explicitly: **"RTL fixes are required before the flow can continue. Signal
 #### 6C — Re-test after fix
 When the user signals that RTL fixes have been applied:
 
-1. Re-run `vflow` scan to confirm that RTL files were modified (check file timestamps or ask the user to confirm).
-2. Run `vtestrun` again.
-3. If new failures exist → run `vdebug` again (only on the new failures) and return to 6B.
-4. If no failures remain → proceed to Phase 7.
+1. Run `vtestrun` again. The test result is the ground truth that a fix took effect — do not gate on file timestamps, which are unreliable across checkouts and editors.
+2. If new failures exist → run `vdebug` again (only on the new failures) and return to 6B.
+3. If no failures remain → proceed to Phase 7.
 
 Repeat the loop until either all failures are resolved or the user explicitly chooses to stop.
 
@@ -171,6 +170,7 @@ After `vdoc` completes, run a final `vflow` scan, write the updated `flow_status
 - **Never proceed past a lint or simulation failure** in Phase 3.
 - **Never leave probe `$display` statements** in RTL after a vdebug probing run (enforced by vdebug, but verify if in doubt).
 - **Always update `flow_status.md`** after each phase completes.
+- **Never fabricate tool output.** If a phase needs an external tool that is not installed (e.g. Vivado for Phase 4, xsim for Phase 5), mark that phase `✗ BLOCKED (tool unavailable: <tool>)`, report it, and continue scanning the remaining phases instead of producing fake results.
 
 ## Known Issues and Fixes
 

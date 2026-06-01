@@ -1,6 +1,9 @@
 ---
 name: vfill
 description: Implement Verilog code from an approved design proposal, then lint and simulate
+effort: medium
+model: claude-sonnet-4-6
+allowed-tools: Read, Write, Bash, Grep
 ---
 
 # Verilog Writer
@@ -12,7 +15,7 @@ This guide defines the workflow for implementing a Verilog module from an approv
 Before starting, read:
 
 1. The target Verilog source file — for `//!` annotations and port declarations
-2. The proposal file `<module_name>_proposal.md` in the same folder — this is the source of truth for the implementation
+2. The proposal file `./ddoc/<module_name>_proposal.md` (same folder as the requirement file) — this is the source of truth for the implementation
 
 ## Prerequisites
 
@@ -36,6 +39,11 @@ When the target module uses submodules, follow this lookup order:
 2. Read the submodule RTL code only if the documentation is not sufficient
 
 Do not read RTL code unless additional information is required to understand the interface or behavior.
+
+After completing the Verilog code:
+
+1. Record the design updates and important notes in the proposal file. This information will help understand the module's functionality and behavior, and can be used during the debugging phase.
+2. Convert all `//!` annotations to regular `//` comments.
 
 ## Step 2 - Clean the Code
 
@@ -107,9 +115,11 @@ Run simulation using xsim from inside `./tb/<module_name>`. All paths must be re
 
 ```bash
 xvlog -nolog <rtl_files> <testbench_file>
-xelab -nolog --top <testbench_module> --snapshot sim_snap
+xelab -nolog --top <testbench_module> --snapshot sim_snap --timescale 1ns/1ps --override_timeunit --override_timeprecision
 xsim sim_snap --runall --nolog
 ```
+
+To allow users to rerun the testbench later, write a bash script in a file, then run that file.
 
 ### Step 3A - Resolve Simulation Failures
 

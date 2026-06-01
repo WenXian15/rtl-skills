@@ -4,4 +4,4 @@ model: opus
 skills:
   - "vtestgen"
   - "vtestrun"
-maxTurns: 60
+maxTurns: 90

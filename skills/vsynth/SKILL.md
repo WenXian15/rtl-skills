@@ -32,13 +32,12 @@ Read the module documentation from `./doc/<module>.md` or `./lib/<module>/<modul
 
 ## Step 2 - Build Source Filelist
 
-Collect all required Verilog files by walking the instantiation hierarchy from the top module:
+Collect all required Verilog files by walking the instantiation hierarchy from
+the top module, following the shared procedure in
+`.claude/skills/shared/HierarchyFilelist.md`.
 
-1. Add the top module file.
-2. For each instantiated submodule, locate its source file in `./rtl/` or `./lib/` (search recursively).
-3. Add each located file and repeat step 2 for it.
-
-Record the complete filelist. Express all paths relative to `synth/<module>/` using `../../` prefixes.
+Record the complete filelist. Express all paths relative to `synth/<module>/`
+using `../../` prefixes.
 
 Example:
 - `./rtl/foo_top.v` → `../../rtl/foo_top.v`

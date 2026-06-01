@@ -9,11 +9,21 @@ description: Generate a design proposal, documentation, and RTL backbone from a 
 
 This guide defines the workflow for generating a design proposal, documentation, and a skeleton RTL module from a Markdown requirement file.
 
-The input is a `.md` requirement file that describes what the module should do. The output is:
+The input is a `.md` requirement file that describes what the module should do, typically `./ddoc/<module>_req.md` produced by `varch`. The output is:
 
 1. A proposal file with function description, architecture and algorithm if applicable
 2. A design documentation file
 3. A backbone Verilog file with `//!` direction comments, ready for implementation by `vfill`
+
+### Module Name Derivation
+
+All output file names are derived from the **module name**, not the raw requirement file name. The module name is the requirement file base name with any trailing `_req` removed.
+
+Example:
+
+- requirement `./ddoc/foo_ctrl_req.md` → module name `foo_ctrl`
+
+Use this module name consistently for the proposal, documentation, and RTL backbone file names below.
 
 ## Step 1 - Read Requirements and Generate Proposal
 
@@ -36,17 +46,17 @@ Generate the following files:
 
 ### Proposal File
 
-Create a new Markdown file in the same folder as the requirement file.
+Create a new Markdown file in the `./ddoc` folder, alongside the requirement file.
 
 Output file rules:
 
-- Use the same base name as the requirement file
+- Use the module name as the base name
 - Append `_proposal` before the extension
 - Use the `.md` extension
 
 Example:
 
-- `foo.md` → `foo_proposal.md`
+- requirement `foo_req.md` → `./ddoc/foo_proposal.md`
 
 ### Design Documentation File
 
@@ -54,23 +64,24 @@ Create a new Markdown file in the `./doc` folder.
 
 Output file rules:
 
-- Use the same base name as the requirement file
+- Use the module name as the base name
 - Use the `.md` extension
 
 Example:
 
-- `foo.md` → `./doc/foo.md`
+- requirement `foo_req.md` → `./doc/foo.md`
 
 ## Required Content for the Design Documentation
 
-The design documentation must include:
+The design documentation must follow the module documentation contract defined in
+`.claude/skills/shared/ModuleDocContract.md`. Populate every required section of
+that contract from the proposal and the requirement file.
 
-- Module overview
-- Parameter descriptions, if applicable
-- Input/Output port descriptions
-- Functional description of the module
-
-The functional description must be consistent with the proposal.
+The functional description must be consistent with the proposal. Because the RTL
+is not yet implemented at this stage, derive the port table, reset values, and
+timing characteristics from the proposal's port list and architecture; if a value
+is not yet decided, state the intended value from the proposal rather than leaving
+it blank.
 
 ## Step 3 - Create Backbone RTL Module
 
@@ -78,12 +89,14 @@ Create a skeleton Verilog file in the `./rtl` folder.
 
 Output file rules:
 
-- Use the same base name as the requirement file
+- Use the module name as the base name
 - Use the `.v` extension
 
 Example:
 
-- `foo.md` → `./rtl/foo.v`
+- requirement `foo_req.md` → `./rtl/foo.v`
+
+This skill generates backbones for submodules only. The top-level integration skeleton `./rtl/<ip>_top.v` is owned by `varch`; do not create or overwrite it here.
 
 ### Backbone Structure
 
@@ -95,7 +108,7 @@ The backbone must include:
 - Empty logic bodies — no implementation
 
 Port signal names must follow the naming conventions in the project coding style:
-- Use `s_` prefix for slave interfaces, `m_` prefix for master interfaces
+- Use `s_` prefix for slave interfaces, `m_` prefix for master interfaces, `b_` prefix for monitor interfaces
 - Use `_ff` suffix for signals intended as flip-flops
 - Use `s0_`, `s1_` prefixes for pipeline stage signals
 
@@ -130,4 +143,4 @@ module foo #(
 endmodule
 ```
 
-The `//!` comments must be specific enough for `vfill` to implement the correct behavior without further design decisions, but must not contain any Verilog code.
+The `//!` comments must be specific enough for `vfill` to implement the correct behavior without further design decisions. They must follow the marker grammar and lifecycle defined in `.claude/skills/shared/CodingStyle.md` — in particular, a marker must never contain Verilog code.

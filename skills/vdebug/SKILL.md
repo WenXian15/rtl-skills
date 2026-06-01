@@ -39,19 +39,19 @@ Read `./issue/<ip_name>/issue_NNN_<tcname>.md`. Extract:
 
 - The failing testcase file and module name
 - The verbatim `Failure Summary` line
-- All `[CONTEXT]` and `Error:` lines from the Simulation Log — these are the signal values at the moment of failure
+- All `[ERROR]` lines and the `[FINISH] FAIL` line from the Simulation Log — these are the signal values and the failed check at the moment of failure
 - The reproduction commands (compile, elaborate, run)
 
 Build a working set of facts: which output signal failed, what value it held, what value was expected, and at what simulation time.
 
 ## Step 2 - Understand the Test
 
-Read `./tb/<ip_name>/tc_<name>.v`. Identify:
+Read `./tb/<ip_name>/tb_<name>.sv` (and the reusable sequences it calls in `dut.vh`). Identify:
 
 - The stimulus sequence applied to the DUT (what inputs, in what order, under what conditions)
 - The reference model or expected-value computation inside the testbench
 - The exact `$error` statement that fired — which output it checked and how the expected value was derived
-- Whether the `[CONTEXT]` signals captured at failure time are consistent with the stimulus (i.e., whether the testcase itself could be the source of the error)
+- Whether the `[ERROR]` signal values captured at failure time are consistent with the stimulus (i.e., whether the testcase itself could be the source of the error)
 
 If the expected value in the testcase is clearly wrong (miscalculated, wrong port name, incorrect timing assumption), note it immediately. Classification in Step 5 will be `TC_BUG`.
 
@@ -67,7 +67,7 @@ Starting from the failing output port, trace backwards through the hierarchy usi
 2. Read that submodule's documentation first. If documentation is missing, use `vexplain` to generate it before reading the RTL.
 3. Read the submodule RTL. Find the `always` block or `assign` statement that computes the signal.
 4. List every upstream signal that feeds into that block.
-5. Cross-reference each upstream signal against the `[CONTEXT]` dump to determine which one carried a wrong value at failure time.
+5. Cross-reference each upstream signal against the `[ERROR]` dump to determine which one carried a wrong value at failure time.
 6. Descend into the submodule that produced the wrong upstream signal and repeat from step 1.
 
 Continue until one of the following stopping conditions is met:
@@ -96,7 +96,7 @@ If static analysis fully identifies the root cause, skip Step 4.
 
 ## Step 4 - Dynamic Probing (Only If Step 3 Is Inconclusive)
 
-Use probing only when static tracing reaches a point where multiple upstream signals could be the source and none of their values appear in the `[CONTEXT]` dump.
+Use probing only when static tracing reaches a point where multiple upstream signals could be the source and none of their values appear in the `[ERROR]` dump.
 
 ### 4A — Add Probes
 
@@ -114,12 +114,13 @@ Add a narrow enable condition (e.g., a cycle range or a specific input pattern) 
 
 ### 4B — Re-run
 
-Run from inside `./tb/<ip_name>/` using the reproduction commands from the issue report.
+Run from inside `./tb/<ip_name>/`. Because the probe modifies an RTL file, force a
+rebuild by removing the stale sim dir before re-running:
 
 ```bash
-xvlog -nolog -f files.f tc_<name>.v
-xelab -nolog --top tc_<name> --snapshot snap_dbg
-xsim snap_dbg --runall --nolog
+rm -rf sim/tb_<name>
+make tb_<name>
+# probe output: sim/tb_<name>/simulate.log
 ```
 
 Capture the full output. Locate the `[PROBE]` lines nearest to the failure time and extract the signal values.
@@ -176,7 +177,7 @@ Two to four sentences. For `RTL_BUG`: what the logic currently computes vs. what
 The full chain table from Step 3, filled with signal names, module names, file paths, and values at failure time. Include every level traversed, even if intermediate values were correct.
 
 **Section: Evidence**
-The `[CONTEXT]` and `Error:` lines from the original issue report, plus any `[PROBE]` lines collected in Step 4 if probing was performed.
+The `[ERROR]` and `[FINISH] FAIL` lines from the original issue report, plus any `[PROBE]` lines collected in Step 4 if probing was performed.
 
 **Closing note**
 End the file with a blockquote: `> This report identifies root cause only. No code change is proposed.`

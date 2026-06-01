@@ -1,0 +1,60 @@
+//==============================================================================
+// tb_{{MODULE}}_basic.sv : starter self-checking testcase for {{MODULE}}
+//   The bench is driven ENTIRELY through the cpu bus (cpu_write/cpu_read_check).
+//   Pass/fail contract: print "[FINISH] PASS" (or FAIL) then $finish.
+//==============================================================================
+`timescale 1ns/1ps
+
+module tb_{{MODULE}}_basic;
+
+    //----- clock periods + reset level (consumed by clock.vh) ----------------
+{{CLK_PARAMS}}
+    parameter RS_LV = 1;
+
+    //----- clock/reset regs ---------------------------------------------------
+{{CLK_REGS}}
+
+    `include "clock.vh"
+
+    //----- DUT parameters -----------------------------------------------------
+{{DUT_PARAMS}}
+
+    `include "dut.vh"
+
+    //----- watchdog -----------------------------------------------------------
+    parameter T_TIMEOUT = 200000 * T_{{SYS_CLK_UPPER}};
+    initial begin
+        #(T_TIMEOUT);
+        $display("[ERROR] time= %0t, WATCHDOG TIMEOUT", $time);
+        $display("[FINISH] FAIL");
+        $finish;
+    end
+
+    //=========================================================================
+    // test script  (CPU read/write ONLY)
+    //=========================================================================
+    initial begin
+        cpu_cs = 0; cpu_we = 0; cpu_oe = 0; cpu_addr = 0; cpu_din = 0;
+
+        // wait reset release
+        @(negedge rst_n_{{SYS_CLK}});
+        #(100*T_{{CPU_CLK_UPPER}});
+
+        // --- example: configure the DUT via its register map ----------------
+        // cpu_write(REG_MODE, 16'h0001);
+        // cpu_read_check(REG_MODE, 16'h0001);
+
+        // --- example: configure + start stimulus through the cpu bus --------
+        // cpu_write(STI_BASE + 1, 16'd2);     // rate
+        // cpu_write(STI_BASE + 0, 16'd1);     // enable
+
+        // --- let traffic run, then check DUT status -------------------------
+        #(10000*T_{{SYS_CLK_UPPER}});
+        // cpu_read_check(REG_STATUS, 16'h....);
+
+        $display("[INFO] time= %0t, TEST PASS!!!", $time);
+        $display("[FINISH] PASS");
+        $finish;
+    end
+
+endmodule
