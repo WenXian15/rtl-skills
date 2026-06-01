@@ -37,8 +37,8 @@ module sco_{{IFACE}} #(
     input  wire                 cpu_we,
     input  wire                 cpu_oe,
     input  wire [19:0]          cpu_addr,
-    input  wire [15:0]          cpu_din,
-    output reg  [15:0]          cpu_dout,
+    input  wire [31:0]          cpu_din,
+    output reg  [31:0]          cpu_dout,
 
     // data-plane output tap from the DUT (observe only - never driven here)
     input  wire                 in_valid,
@@ -46,8 +46,8 @@ module sco_{{IFACE}} #(
     input  wire [DATA_W-1:0]    in_data
 );
 
-    // payload is word-addressed in 16-bit CPU words (matches the cpu bus width)
-    localparam NW = (DATA_W + 15) / 16;
+    // payload is word-addressed in 32-bit CPU words (matches the cpu bus width)
+    localparam NW = (DATA_W + 31) / 32;
 
     // ----- config / status register addresses (offsets from SCO_ADDR) --------
     localparam REG_ENA    = SCO_ADDR + 0;        // [0] enable checking
@@ -59,37 +59,37 @@ module sco_{{IFACE}} #(
     localparam SCO_FM     = SCO_ADDR + 16 + NW;  // first-mismatch capture, word i
 
     reg                  ena;
-    reg [15:0]           mode;
-    reg [15:0]           errcnt;
-    reg [15:0]           chkcnt;
+    reg [31:0]           mode;
+    reg [31:0]           errcnt;
+    reg [31:0]           chkcnt;
     reg [DATA_W-1:0]     exp;                    // expected payload (word-written)
     reg [DATA_W-1:0]     fm_data;                // first mismatched beat captured
 
     // ----- cpu-slave write decode --------------------------------------------
     always @(posedge clk) begin
         if (!rst_n) begin
-            ena <= 1'b0; mode <= 16'd0; exp <= '0;
+            ena <= 1'b0; mode <= 32'd0; exp <= '0;
         end else if (cpu_cs && cpu_we) begin
             if (cpu_addr == REG_ENA)  ena  <= cpu_din[0];
             if (cpu_addr == REG_MODE) mode <= cpu_din;
             // expected payload: word-addressed range [SCO_EXP, SCO_EXP+NW)
             if (cpu_addr >= SCO_EXP && cpu_addr < SCO_EXP + NW)
-                exp[(cpu_addr - SCO_EXP) * 16 +: 16] <= cpu_din;
+                exp[(cpu_addr - SCO_EXP) * 32 +: 32] <= cpu_din;
         end
     end
 
     // ----- cpu-slave read decode ---------------------------------------------
     always @(*) begin
-        cpu_dout = 16'h0000;
+        cpu_dout = 32'h0000_0000;
         if (cpu_cs && cpu_oe) begin
-            if (cpu_addr == REG_ENA)    cpu_dout = {15'd0, ena};
+            if (cpu_addr == REG_ENA)    cpu_dout = {31'd0, ena};
             else if (cpu_addr == REG_MODE)   cpu_dout = mode;
             else if (cpu_addr == REG_ERRCNT) cpu_dout = errcnt;
             else if (cpu_addr == REG_CHKCNT) cpu_dout = chkcnt;
             else if (cpu_addr >= SCO_EXP && cpu_addr < SCO_EXP + NW)
-                cpu_dout = exp[(cpu_addr - SCO_EXP) * 16 +: 16];
+                cpu_dout = exp[(cpu_addr - SCO_EXP) * 32 +: 32];
             else if (cpu_addr >= SCO_FM && cpu_addr < SCO_FM + NW)
-                cpu_dout = fm_data[(cpu_addr - SCO_FM) * 16 +: 16];
+                cpu_dout = fm_data[(cpu_addr - SCO_FM) * 32 +: 32];
         end
     end
 
@@ -102,12 +102,12 @@ module sco_{{IFACE}} #(
     // and the expected-value derivation to this interface.
     always @(posedge clk) begin
         if (!rst_n || clr) begin
-            errcnt <= 16'd0; chkcnt <= 16'd0; fm_data <= '0;
+            errcnt <= 32'd0; chkcnt <= 32'd0; fm_data <= '0;
         end else if (ena && in_valid && in_ready) begin
-            chkcnt <= chkcnt + 16'd1;
+            chkcnt <= chkcnt + 32'd1;
             if (in_data !== exp) begin
-                if (errcnt == 16'd0) fm_data <= in_data;   // capture first mismatch
-                errcnt <= errcnt + 16'd1;
+                if (errcnt == 32'd0) fm_data <= in_data;   // capture first mismatch
+                errcnt <= errcnt + 32'd1;
                 $display("[ERROR] time= %0t, sco_{{IFACE}} beat %0d MISMATCH: expected 0x%0h got 0x%0h",
                          $time, chkcnt, exp, in_data);
                 $display("[FINISH] FAIL");

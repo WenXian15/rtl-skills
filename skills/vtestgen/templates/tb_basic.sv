@@ -11,6 +11,11 @@ module tb_{{MODULE}}_basic;
 {{CLK_PARAMS}}
     parameter RS_LV = 1;
 
+    //----- cpu access latency (cpu clocks the bus is held per access) --------
+    // default 1 = single-cycle access; raise for a slave that needs more cycles
+    parameter CPU_WR_LAT = 1;
+    parameter CPU_RD_LAT = 1;
+
     //----- clock/reset regs ---------------------------------------------------
 {{CLK_REGS}}
 
@@ -41,16 +46,16 @@ module tb_{{MODULE}}_basic;
         #(100*T_{{CPU_CLK_UPPER}});
 
         // --- example: configure the DUT via its register map ----------------
-        // cpu_write(REG_MODE, 16'h0001);
-        // cpu_read_check(REG_MODE, 16'h0001);
+        // cpu_write(REG_MODE, 32'h0000_0001);
+        // cpu_read_check(REG_MODE, 32'h0000_0001);
 
         // --- example: configure + start stimulus through the cpu bus --------
-        // cpu_write(STI_BASE + 1, 16'd2);     // rate
-        // cpu_write(STI_BASE + 0, 16'd1);     // enable
+        // cpu_write(STI_BASE + 1, 32'd2);     // rate
+        // cpu_write(STI_BASE + 0, 32'd1);     // enable
 
         // --- let traffic run, then check DUT status -------------------------
         #(10000*T_{{SYS_CLK_UPPER}});
-        // cpu_read_check(REG_STATUS, 16'h....);
+        // cpu_read_check(REG_STATUS, 32'h0000_0000);
 
         $display("[INFO] time= %0t, TEST PASS!!!", $time);
         $display("[FINISH] PASS");

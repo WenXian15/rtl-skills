@@ -133,12 +133,19 @@ Expand `templates/dut.vh`:
   `SCO_ADDR` (`SCO_BASE`, `SCO_BASE+32`, ...), sharing the CPU bus and tapping a DUT
   output. Leave empty (and drop `SCO_BASE`) if no scoreboard is generated.
 - `{{STI_DOUT_OR}}` / `{{SCO_DOUT_OR}}` — OR of each sti / sco instance's `*_dout`
-  for the read mux. Substitute `16'h0000` for either term when that group is empty.
+  for the read mux. Substitute `32'h0` for either term when that group is empty.
 - `{{CPU_CLK}}` / `{{CPU_CLK_UPPER}}` — the CPU-domain clock name used by the BFM tasks.
 
 The three BFM tasks (`cpu_write`, `cpu_read`, `cpu_read_check`) are already in the
 template; keep them, only fix the clock name. `cpu_read_check` prints
 `[FINISH] FAIL` + `$finish` on mismatch — this is the failure path of the contract.
+
+Each access is held for a parameterized number of CPU clocks — `CPU_WR_LAT` for
+writes, `CPU_RD_LAT` for reads (declared by the testcase, default 1). Set these
+higher when the DUT's CPU slave needs more than one cycle per access; read data is
+sampled at the end of the `CPU_RD_LAT` window while `cpu_oe` is still asserted. For
+a slave with a variable-latency `ready`/`ack` handshake, poll that signal in the
+task instead of using a fixed latency.
 
 **Put reusable high-level sequences in `dut.vh`, not in the testcases.** Any
 multi-step CPU sequence more than one testcase will repeat — load a key/config
@@ -199,7 +206,7 @@ For each such output, expand `templates/sco_template.sv`:
   non-trivial. **OPTION 3:** replay expected beats from a file.
 - On a mismatch the scoreboard prints `[ERROR] ...` then `[FINISH] FAIL` + `$finish`
   (self-fail, consistent with `cpu_read_check`). `ERRCNT` is still exposed so a
-  testcase may instead defer the verdict with `cpu_read_check(SCO_ERRCNT, 16'd0)`.
+  testcase may instead defer the verdict with `cpu_read_check(SCO_ERRCNT, 32'd0)`.
 - **Width-generic** like the sti drivers — parameterise by `DATA_W`, word-address the
   expected/capture payload, never hardcode the width.
 
@@ -233,8 +240,8 @@ For each planned testcase, create `tb/<ip>/tb_<category>_<name>.sv` by expanding
 
 Each testcase must:
 
-- declare the clock-period params (`T_*`), `RS_LV`, and clk/rst regs, then
-  `` `include "clock.vh" ``;
+- declare the clock-period params (`T_*`), `RS_LV`, the cpu access latencies
+  (`CPU_WR_LAT`, `CPU_RD_LAT`), and clk/rst regs, then `` `include "clock.vh" ``;
 - declare the DUT parameters, then `` `include "dut.vh" ``;
 - contain a watchdog `initial` that prints `[FINISH] FAIL` on timeout;
 - have a single test-script `initial` block that uses **only** the reusable
@@ -253,7 +260,7 @@ and no direct access to DUT or sti internals.
 - **Stream outputs are checked by their `sco_*` scoreboard:** the test script loads
   the expected payload and enables the scoreboard with `cpu_write`; the scoreboard
   self-fails on the first mismatched beat. For a deferred verdict, end the run and
-  assert `cpu_read_check(SCO_ERRCNT, 16'd0)` instead. Either way the test script
+  assert `cpu_read_check(SCO_ERRCNT, 32'd0)` instead. Either way the test script
   still touches the bench only through the CPU bus.
 - For extra diagnostic context before a manual failure, print an `[ERROR] time= ...`
   line with the relevant signal values, then `[FINISH] FAIL` and `$finish`.
