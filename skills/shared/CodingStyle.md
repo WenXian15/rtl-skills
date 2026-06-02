@@ -29,19 +29,20 @@ marked *prefer*.
 
 - Use ANSI-style port lists (ports declared inline in the header), not Verilog-95.
 - Use the `module name #( ... ) ( ... );` form for parameters.
-- Indent the `#(` parameter block and the `(` port block one level (8 spaces)
-  inside the module; align the closing `)` with them.
+- Indent the parameter and port declarations one level (4 spaces) inside the
+  module header; put the closing `)`, and the `) (` between the parameter and
+  port lists, in column 0 (aligned with `module`).
 
 ```verilog
 module fgbw_cal #(
-        parameter ID_NO         = 16,       //! number of channel ID, ID_NO < G1*G2
-        parameter ID_W        = 4,        //! ID bus width
-        parameter RS_LV         = 0         //! reset active level (0 = active-low)
-    ) (
-        input clk,                              //! clock
-        input rst_n,                            //! reset
-        ...
-    );
+    parameter ID_NO = 16,   //! number of channel ID, ID_NO < G1*G2
+    parameter ID_W  = 4,    //! ID bus width
+    parameter RS_LV = 0     //! reset active level (0 = active-low)
+) (
+    input clk,      //! clock
+    input rst_n,    //! reset
+    ...
+);
 ```
 
 - Parameter names are `UPPER_SNAKE_CASE`, aligned in a column, with `//!`
@@ -87,7 +88,8 @@ localparam LPF_W  = MBIT          // main phase
 | Config inputs | `cfg_*` | `cfg_id`, `cfg_c` |
 | Register-file regs | `rf_*` (+ `_ff`) | `rf_period_1s_ff` |
 | CPU/UPI signals | `upi_*` / `up_*` | `s_upi_addr`, `up_ce` |
-| Master/slave bus | `m_*` / `s_*` | `m_valid`, `s_carry` |
+| Master/slave bus (at a port) | `m_*` / `s_*` | `m_valid`, `s_carry` |
+| Inter-module net (in parent) | `<master>2<slave>_<bus>` or `<master>_<bus>` | `ctl2prc_data`, `sch_cfg_req` |
 
 - **Every flip-flop carries the `_ff` suffix; combinational nets never do.**
 - Use functional sub-block prefixes to namespace signals within a module
@@ -177,6 +179,53 @@ Standard buses in this project:
     input  [31:0]       s_upi_din,      //! write data
     output [31:0]       s_upi_dout,     //! read data
     ...
+```
+
+### 3.3 Inter-module connection nets
+
+The `m_`/`s_` direction prefix in §3.2 names a signal **at a module port** — it
+states the port's role (master drives, slave receives) from that module's point
+of view. A net in a **parent** that wires one module's master port to another's
+slave port belongs to neither role, so it does not take an `m_`/`s_` prefix.
+Name it for the connection it makes instead:
+
+- **`<master>2<slave>_<bus>`** — the net carrying bus `<bus>` from module
+  `<master>` to module `<slave>`. The `2` reads "to", so the producer and
+  consumer are visible at the connection: `ctl2prc_data`, `ctl2prc_valid` wire
+  `u_foo_ctrl`'s master port to `u_foo_proc`'s slave port.
+- **`<master>_<bus>`** — the simplified form, used when the source alone is
+  enough to identify the net unambiguously (a single consumer, or a fan-out that
+  no specific destination owns): `sch_cfg_req`, `rr_rd_id`.
+
+Rules:
+
+- Drop the `2<slave>` part only when it adds no information; keep it whenever two
+  or more nets share the same `<master>_<bus>` root and would otherwise collide.
+- `<master>` / `<slave>` are the instance/block short names, not the full module
+  names — match the functional sub-block prefixes used elsewhere (§3, e.g. `sch`,
+  `rr`, `ctl`, `prc`).
+- These nets are wires in the parent and never carry `_ff` (same as bus members,
+  §3.2). The producing module registers internally and drives the net from its
+  master port.
+- The port on each end still follows §3.2: the master drives `m_<bus>_*`, the
+  slave receives `s_<bus>_*`. Only the connecting net uses the `<master>2<slave>`
+  form.
+
+```verilog
+    // parent: u_foo_ctrl (master) → u_foo_proc (slave)
+    wire [DATA_W-1:0] ctl2prc_data;    // ctl drives, prc receives
+    wire              ctl2prc_valid;
+
+    foo_ctrl u_foo_ctrl (
+        .m_data  (ctl2prc_data),       // master port: m_*
+        .m_valid (ctl2prc_valid),
+        ...
+    );
+    foo_proc u_foo_proc (
+        .s_data  (ctl2prc_data),       // slave port: s_*
+        .s_valid (ctl2prc_valid),
+        ...
+    );
 ```
 
 ## 4. Section banners
@@ -297,14 +346,14 @@ Use a single `//===` line or a `//----` divider for sub-sections.
 
 ```verilog
     fgbw_cal_timer #(
-            .TS_W(TS_W),
-            .RS_LV (RS_LV)
-        ) itimer (
-            .clk     (clk),
-            .rst_n   (rst_n),
-            .active  ('d1),
-            .timeslot(tmr_timeslot)
-        );
+        .TS_W  (TS_W),
+        .RS_LV (RS_LV)
+    ) itimer (
+        .clk     (clk),
+        .rst_n   (rst_n),
+        .active  ('d1),
+        .timeslot(tmr_timeslot)
+    );
 ```
 
 - Give instances a descriptive name with an `i` prefix (e.g. `itimer`,

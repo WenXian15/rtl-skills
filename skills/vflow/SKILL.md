@@ -22,7 +22,7 @@ Run the following checks to determine the completion status of each phase. All f
 
 | Phase | Complete when | Pending when |
 |-------|--------------|--------------|
-| 1 – Architecture | `ddoc/` contains at least one `_req.md` AND `rtl/<ip>_top.v` exists | Either is missing |
+| 1 – Architecture | `ddoc/<ip>_arch.md` exists AND `ddoc/` contains at least one `_req.md` AND `rtl/<ip>_top.v` exists | Any of the three is missing |
 | 2 – Design | Every `ddoc/<module>_req.md` has a corresponding `rtl/<module>.v` | Any req file lacks an RTL file |
 | 3 – Implementation | No `rtl/*.v` file (excluding `_top.v`) contains a `//@` marker | Any RTL file still has `//@` markers |
 | 4 – Synthesis | `synth/<ip>/synth_report.md` exists | File is absent |
@@ -72,9 +72,9 @@ A phase that is already DONE must be skipped entirely — do not re-run complete
 
 **Invoke when:** Phase 1 is PENDING.
 
-Run `varch` on the top-level IP requirement file.
+Run `varch` on the top-level IP requirement file. It writes the canonical architecture document `ddoc/<ip>_arch.md` and derives the per-submodule `_req.md` files and `rtl/<ip>_top.v` from it.
 
-**Checkpoint:** Present the proposed module decomposition and interface definitions to the user. Wait for explicit approval before proceeding. If the user requests changes, revise and re-present. Do not advance to Phase 2 without approval.
+**Checkpoint:** Present the proposed module decomposition and interface definitions to the user. Wait for explicit approval before proceeding. If the user requests changes, edit `ddoc/<ip>_arch.md` and re-run `varch` — it regenerates only the affected submodules and reports the change set (see `varch` Step 6) — then re-present. Do not advance to Phase 2 without approval.
 
 ---
 
