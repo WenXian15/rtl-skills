@@ -1,6 +1,8 @@
 ---
 name: vsynth
 description: Synthesize a Verilog module or full IP with Vivado and report resource utilization, Fmax, and power
+effort: medium
+model: sonnet
 ---
 
 # Verilog Synthesizer

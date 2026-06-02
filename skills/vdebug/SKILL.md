@@ -1,6 +1,7 @@
 ---
 name: vdebug
 description: Trace failing signals through the RTL hierarchy, classify root cause, and write a debug report per issue — no fix is proposed
+model: opus
 ---
 
 # Verilog Debugger

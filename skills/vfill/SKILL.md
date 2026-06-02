@@ -2,7 +2,7 @@
 name: vfill
 description: Implement Verilog code from an approved design proposal, then lint and simulate
 effort: medium
-model: claude-sonnet-4-6
+model: opus
 allowed-tools: Read, Write, Bash, Grep
 ---
 

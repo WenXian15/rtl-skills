@@ -2,6 +2,7 @@
 name: vexplain
 description: Generate documentation for any RTL module from Verilog source files
 effort: medium
+model: opus
 allowed-tools: Read, Write
 ---
 

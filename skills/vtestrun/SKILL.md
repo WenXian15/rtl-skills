@@ -1,6 +1,8 @@
 ---
 name: vtestrun
 description: Run all IP-level testcases from tc_list.md through the bench Makefile, capture results, and write per-failure issue reports with no fix suggestions
+effort: medium
+model: sonnet
 ---
 
 # Verilog Testcase Runner
