@@ -26,6 +26,24 @@ Before starting, read:
 | xelab     | Xilinx elaborator                   | `xelab --version`     |
 | xsim      | Xilinx simulator                    | `xsim --version`      |
 
+Before running any lint or simulation step, verify the tool it needs is
+installed using the check command above. If a required tool is missing, **stop
+and report which tool is unavailable — never fabricate lint, simulation, or
+elaboration results.** The Verilog can still be filled in (Step 1) without the
+tools, but Steps 2 and 3 must not be reported as passed unless they actually
+ran. (When invoked under `vflow`, this surfaces as `✗ BLOCKED (tool
+unavailable: <tool>)` for the dependent phase.)
+
+## Before You Start — Re-run Safety
+
+Before editing, check `rtl/<module>.v` for `//@` markers (the signal `vflow`
+uses for completion, CodingStyle §18):
+
+| State | Detect | Action |
+|-------|--------|--------|
+| **Backbone** | `//@` markers present | First run — implement, then convert every `//@` away. |
+| **Already filled** | no `//@` left / real logic present | Filled before: do not re-fill from scratch. Make the requested change as an incremental edit, **update the proposal notes in place rather than appending a duplicate**, then re-lint and re-simulate. |
+
 ## Step 1 - Fill in the Verilog Code
 
 Complete the target Verilog source file based on:
@@ -33,9 +51,14 @@ Complete the target Verilog source file based on:
 - The approved proposal file
 - The coding style rules defined in `.claude/skills/shared/CodingStyle.md`
 
+The filled file is synthesizable RTL, so it must be **plain Verilog-2005 (IEEE
+1364-2005) only — no SystemVerilog constructs** (CodingStyle §0), and must carry
+`` `default_nettype none `` at the top restored with `` `default_nettype wire ``
+at the end (CodingStyle §14).
+
 When the target module uses submodules, follow this lookup order:
 
-1. Read the submodule documentation first. It could be in `./doc`, `./lib` and sub-folder, or `./rtl`
+1. Read the submodule documentation first — only its port/parameter section, not the whole file. It could be in `./doc`, `./lib` and sub-folder, or `./rtl`
 2. Read the submodule RTL code only if the documentation is not sufficient
 
 Do not read RTL code unless additional information is required to understand the interface or behavior.
@@ -49,6 +72,18 @@ After completing the Verilog code:
 
 Run lint in two passes. Both must pass before proceeding to simulation.
 
+Run these commands from a scratch directory (e.g. `./tb/<module_name>`, the same
+folder used for simulation in Step 3) so `xvlog`/`xelab` write `xsim.dir` and
+their logs there instead of polluting the repository root. Express RTL/library
+paths relative to that directory.
+
+Redirect each tool to a log file and read back **only the finding lines**, never
+the full transcript — Verilator prefixes findings with `%Error`/`%Warning`:
+
+```bash
+verilator … 2>&1 | tee lint.log    # then inspect: grep -nE '%(Error|Warning)' lint.log
+```
+
 ### Pass 1 — Verilator
 
 ```bash
@@ -57,12 +92,15 @@ verilator --lint-only --top-module <top_module> -y <path_to_rtl_folder> -y <path
 
 Where:
 - `--top-module <top_module>` specifies the top-level module name
-- `-y <path_to_rtl_folder>` specifies the relative path to the project RTL folder, for example `-y ./rtl`
-- `-y <path_to_library_folder>` specifies the relative path to the library root folder, for example `-y ./lib`
-- `-y <path_to_library_submodule_folder>` specifies the relative path to a submodule folder inside the library, for example `-y ./lib/module_1`
-- `<path_to_top_module_file>` specifies the relative path to the file containing the top-level module, for example `./rtl/top_module.v`
+- `-y <path_to_rtl_folder>` specifies the path to the project RTL folder, relative to the scratch dir, for example `-y ../../rtl`
+- `-y <path_to_library_folder>` specifies the path to the library root folder, for example `-y ../../lib`
+- `-y <path_to_library_submodule_folder>` specifies the path to a submodule folder inside the library, for example `-y ../../lib/module_1`
+- `<path_to_top_module_file>` specifies the path to the file containing the top-level module, for example `../../rtl/top_module.v`
 
-Add one `-y` option for each required library subfolder.
+Add one `-y` option for each required library subfolder. The `-y` paths are
+*search directories*: Verilator discovers each instantiated submodule by name
+itself, so this pass needs no explicit per-file list — just point it at every
+folder that holds a required module.
 
 ### Pass 2 — Xilinx xvlog + xelab
 
@@ -71,7 +109,15 @@ xvlog -nolog <rtl_files>
 xelab -nolog --top <top_module>
 ```
 
-Where `<rtl_files>` is the list of all Verilog source files required by the design.
+Where `<rtl_files>` is the explicit list of all Verilog source files required by
+the design (unlike Verilator's `-y` search paths, `xvlog` needs the files named).
+Build the list by the walk in `.claude/skills/shared/HierarchyFilelist.md`:
+recurse from the filled module, searching `./rtl/` first then `./lib/`,
+de-duplicate a file shared by multiple parents, and treat a submodule whose
+source cannot be found as a **hard error** — report the missing module and its
+parent rather than silently dropping it. The same `<rtl_files>` list feeds the
+simulation step (Step 3). For a single small module this walk is short, so do
+not generate a persisted filelist — that artifact belongs to the IP-level skills.
 
 ### Step 2A - Resolve Lint Issues
 
@@ -92,7 +138,8 @@ For Verilator, use the following format to suppress a specific warning:
 /* verilator lint_on <WARNING_CODE> */
 ```
 
-After all proposed fixes have been applied, re-run both lint passes.
+After all proposed fixes have been applied, re-run the lint pass that failed and
+re-grep its log — do not re-echo whole logs each iteration.
 
 Repeat this process until:
 
@@ -103,23 +150,34 @@ Do not ignore warnings silently.
 
 ## Step 3 - Functional Simulation
 
-Generate a self-checking testbench file `<module_name>_tb.v` in the folder `./tb/<module_name>`. All compile and simulation commands must run from inside this folder.
+Generate a self-checking testbench file `<module_name>_tb.sv` in the folder `./tb/<module_name>`. All compile and simulation commands must run from inside this folder. The testbench is verification code, so it is SystemVerilog (`.sv`) — permitted under `tb/` per CodingStyle §0; only the synthesizable RTL is restricted to Verilog-2005.
 
 The testbench must:
 
 - Cover every operating scenario from the approved design
 - Assert outputs against expected values using `$error` on mismatch
-- Print a final PASS or FAIL summary
+- End by printing exactly one verdict token (CodingStyle §19): `[FINISH] PASS`
+  when every scenario passed, `[FINISH] FAIL` on any mismatch — then `$finish`.
+  This is the single machine-readable result; print diagnostic context on
+  `[ERROR] time= ...` lines, not in the verdict.
 
 Run simulation using xsim from inside `./tb/<module_name>`. All paths must be relative to that folder — use `../../rtl` for the RTL folder and `../../lib` for the library folder.
 
 ```bash
-xvlog -nolog <rtl_files> <testbench_file>
+xvlog -nolog <rtl_files>
+xvlog -nolog -sv <testbench_file>
 xelab -nolog --top <testbench_module> --snapshot sim_snap --timescale 1ns/1ps --override_timeunit --override_timeprecision
-xsim sim_snap --runall --nolog
+xsim sim_snap --runall --nolog | tee sim.log
 ```
 
-To allow users to rerun the testbench later, write a bash script in a file, then run that file.
+The bench prints many `$display` lines, but only the result matters: read back
+`grep -nE '\[ERROR\]|\[FINISH\]' sim.log`, not the full transcript. This is what
+the `[FINISH]`/`[ERROR]` convention is for. On a re-run after a fix, re-grep —
+do not re-ingest the whole log.
+
+To allow users to rerun the testbench later, write these commands into a script
+at `./tb/<module_name>/run.sh` and run that file, rather than issuing the
+commands ad-hoc.
 
 ### Step 3A - Resolve Simulation Failures
 
@@ -130,6 +188,19 @@ For each failing scenario:
 3. Apply the fix only if it does not conflict with the approved design.
 
 Repeat until all scenarios pass.
+
+## Step 4 - Self-Check
+
+Confirm before declaring the module complete — this is the handoff `vflow`
+relies on:
+
+- [ ] No `//@` markers remain in `rtl/<module>.v` (a stray one keeps `vflow` at IN PROGRESS — CodingStyle §18).
+- [ ] Verilog-2005 only, with `` `default_nettype none ``/`` wire `` bookends (§0, §14).
+- [ ] Both lint passes clean; any surviving warning has a paired narrow waiver.
+- [ ] Simulation passes every scenario; `./tb/<module_name>/run.sh` reproduces the run.
+- [ ] Proposal notes updated once (not duplicated — see Re-run Safety).
+
+If a tool was unavailable, report which check could not run — don't mark it passed.
 
 ## Known Issues and Fixes
 
