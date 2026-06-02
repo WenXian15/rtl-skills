@@ -56,10 +56,10 @@ $(TESTCASE):
 cleanf:
 	@for si in $(TESTCASE) ; do \
 		if test -f "$(SIM_FOLDER)/$$si/simulate.log" ; then \
-			result=$$(cat $(SIM_FOLDER)/$$si/simulate.log | grep FINISH | awk '{print $$2}') ;\
-			if [ -z $$result ]; then \
+			result=$$(grep -m1 FINISH $(SIM_FOLDER)/$$si/simulate.log | awk '{print $$2}') ;\
+			if [ -z "$$result" ]; then \
 				rm -rf $(SIM_FOLDER)/$$si ;\
-			elif [ $$result != PASS ]; then \
+			elif [ "$$result" != PASS ]; then \
 				rm -rf $(SIM_FOLDER)/$$si ;\
 			fi ;\
 		else \
@@ -70,10 +70,10 @@ cleanf:
 report:
 	@for si in $(TESTCASE) ; do \
 		if test -f "$(SIM_FOLDER)/$$si/simulate.log" ; then \
-			result=$$(cat $(SIM_FOLDER)/$$si/simulate.log | grep FINISH | awk '{print $$2}') ;\
-			if [ -z $$result ]; then \
+			result=$$(grep -m1 FINISH $(SIM_FOLDER)/$$si/simulate.log | awk '{print $$2}') ;\
+			if [ -z "$$result" ]; then \
 				echo "$$(date -r $(SIM_FOLDER)/$$si/simulate.log +"[%F|%T]:") $(RED)FAIL$(NC) ...... $$si" ;\
-			elif [ $$result = PASS ]; then \
+			elif [ "$$result" = PASS ]; then \
 				echo "$$(date -r $(SIM_FOLDER)/$$si/simulate.log +"[%F|%T]:") $(GREEN)PASS$(NC) ...... $$si" ;\
 			else \
 				echo "$$(date -r $(SIM_FOLDER)/$$si/simulate.log +"[%F|%T]:") $(RED)FAIL$(NC) ...... $$si" ;\

@@ -63,7 +63,7 @@ xilinx: $(XILINX_DEPS)
 	$(call run, compile, xvlog --incr --relax -i $(TB_FOLDER) $(RTL_FILES) $(STI_FILES) $(TB_FOLDER)/$(TESTCASE).sv)
 	$(call run, elaborate, xelab --incr --debug typical --relax --mt 8 -L xil_defaultlib -L uvm -L unisims_ver -L unimacro_ver -L secureip --snapshot $(TESTCASE) work.$(TESTCASE))
 	$(call run, simulate, timeout $(TIMEOUT) xsim $(TESTCASE) -runall -onfinish quit)
-	@result=$$(cat simulate.log | grep FINISH | awk '{print $$2}') ;\
+	@result=$$(grep -m1 FINISH simulate.log | awk '{print $$2}') ;\
 	if [ "$$result" = PASS ]; then \
 		echo "$(TESTCASE) ........ $(GREEN)PASS$(NC)" ;\
 	else \

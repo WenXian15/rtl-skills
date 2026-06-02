@@ -129,10 +129,16 @@ Expand `templates/dut.vh`:
   resets to the generated names. The DUT read-data output connects to a
   `dut_cpu_dout` wire so it can be muxed.
 - `{{STI_INSTANCES}}` — one instance per `sti_*.sv` (Step A5), each given a unique
-  `STI_ADDR` (`STI_BASE`, `STI_BASE+16`, ...), sharing the CPU bus.
+  `STI_ADDR` on a **`0x100`-word window** (`STI_BASE`, `STI_BASE+'h100`, ...),
+  sharing the CPU bus.
 - `{{SCO_INSTANCES}}` — one instance per `sco_*.sv` (Step A6), each given a unique
-  `SCO_ADDR` (`SCO_BASE`, `SCO_BASE+32`, ...), sharing the CPU bus and tapping a DUT
-  output. Leave empty (and drop `SCO_BASE`) if no scoreboard is generated.
+  `SCO_ADDR` on a **`0x100`-word window** (`SCO_BASE`, `SCO_BASE+'h100`, ...),
+  sharing the CPU bus and tapping a DUT output. Leave empty (and drop `SCO_BASE`)
+  if no scoreboard is generated.
+- **Each slave owns a 256-word window**, so its registers — including any
+  width-dependent payload/capture that spans `NW = DATA_W/32` words — never reach
+  the next slave's base (good for `DATA_W` up to 8192). Keep every slave base
+  `0x100`-aligned and any word-addressed payload within its window.
 - `{{STI_DOUT_OR}}` / `{{SCO_DOUT_OR}}` — OR of each sti / sco instance's `*_dout`
   for the read mux. Substitute `32'h0` for either term when that group is empty.
 - `{{CPU_CLK}}` / `{{CPU_CLK_UPPER}}` — the CPU-domain clock name used by the BFM tasks.
@@ -155,29 +161,58 @@ for capture, read a payload back — belongs here as a task built on the BFM tas
 (e.g. `load_key`, `cfg_run`, `sti_load`, `sti_read`, `sti_beat`). Make them
 width-generic by looping `0..NW-1` over the word-addressed `sti_*` registers. This
 keeps every `tb_*.sv` to pure intent and lets a testcase at a different `DW` reuse
-the exact same sequences.
+the exact same sequences. The template already ships a commented `arm_stream` /
+`check_stream` pair (the driver↔scoreboard runtime-sync handshake from Step A5):
+uncomment and keep it when the bench has an `sti_*`/`sco_*` pair, drop the sco half
+otherwise.
 
 ## Step A5 - Generate `tb/<ip>/sti_<iface>.sv` per data interface
 
 For each data-plane input group from Step A1, expand `templates/sti_template.sv`:
 
 - Name it `sti_<iface>.sv`, module `sti_<iface>`.
-- Keep the CPU-slave wrapper (write-decode of `ENA/RATE/MODE/SEED...`, read-decode
+- Keep the CPU-slave wrapper (write-decode of `ENA/RATE/MODE/SEED/CLR`, read-decode
   into `cpu_dout`, address self-decode from `STI_ADDR`) **unchanged** — this is what
   makes the driver controllable from the test script via `cpu_write` only.
-- Replace only the `GENERATOR BODY` with traffic appropriate to this interface
-  (stream/calendar, packet burst, prbs, AXI master, file-replay, ...). Match the
-  DUT's handshake (valid/ready, sof/eof) and data width.
+- The `GENERATOR BODY` ships **MODE-selectable** (chosen at run time via the
+  `MODE` register, no recompile): `MODE_LFSR` (pseudo-random, replicated to fill
+  `DATA_W`), `MODE_COUNT` (byte-stream counter-up), and `MODE_FILE` (replay
+  `DATA_W`-wide words from `PATTERN_FILE` via `$readmemh`). Keep the modes that
+  fit this interface, add ones it needs (packet burst, AXI master, sof/eof
+  framing, ...), and match the DUT's handshake (valid/ready) and data width. A
+  per-project "specific pattern" belongs in a hex file driven by `MODE_FILE`, not
+  hardcoded in the body.
+- **Runtime sync with the mirroring `sco_*`.** The driver and scoreboard are two
+  independent generators; the `CLR` register arms each one back to the start of its
+  sequence (reseed from `SEED`, counters to 0) without a full DUT reset. The
+  testcase syncs them by: write the **same** `MODE`/`SEED` to both → pulse `CLR` on
+  both → enable the sco → enable the driver. This holds across DUT latency and
+  back-pressure because the sco advances per accepted output beat, **but only when
+  the DUT carries the stream 1:1 in order** (FIFO/CDC/passthrough). For a DUT that
+  drops/reorders/transforms beats, the mirror is invalid — use a reference-model
+  `sco_*` (Step A6). Put the arm-and-enable handshake in a `dut.vh` sequence so
+  every testcase reuses it.
+- **Wire the handshake `ready` on both sides.** The driver consumes the DUT
+  *input* `ready` via its `out_ready` port — it holds each beat until accepted and
+  advances only then, so it stays in lock-step with the sco under back-pressure;
+  tie `out_ready` to `1'b1` in `dut.vh` if the input has no `ready`. The DUT
+  *output* `ready` is only *tapped* by the sco — something else must drive it: tie
+  it high for a plain run, or add a small ready/throttle driver (an `sti_*`-style
+  CPU slave) for back-pressure testcases.
 - Expose every output the DUT data port needs; expose status counters and any
   captured output as readable registers so testcases can `cpu_read_check` them.
 - **Make the driver width-generic — never hardcode the data width.** Parameterise
   by the DUT's data width (`DW`, plus `UW`/`EW` sidebands), derive everything from
-  it (`localparam NW = DW/32;`). The payload/capture registers and `din_data` must
-  be `[DW-1:0]`. Because the CPU is 32-bit, expose the payload as **word-addressed**
-  registers at a base offset (`PT` word `i` at `STI_PT+i`, `i = 0..NW-1`) decoded
-  with a range check + variable indexed part-select
-  (`pt[(cpu_addr-STI_PT)*32 +: 32]`). A driver hardcoded to one width silently works
-  at the default `DW` then fails the first multi-block (`DW=N*128`) testcase.
+  it (`localparam NW = (DW+31)/32;`, `NB = DW/8;`). Every payload/capture register
+  and `out_data` must be `[DW-1:0]`; the shipped modes already size off `DW`. A
+  driver hardcoded to one width silently works at the default `DW` then fails the
+  first multi-block (`DW=N*128`) testcase.
+- If a testcase must push an **exact payload over the CPU bus** (rather than via
+  `MODE_FILE`), expose it as **word-addressed** registers — the CPU is 32-bit — at
+  a base offset (`PT` word `i` at `STI_PT+i`, `i = 0..NW-1`) decoded with a range
+  check + variable indexed part-select (`pt[(cpu_addr-STI_PT)*32 +: 32]`), exactly
+  the same way `sco_template.sv` word-addresses its capture payload. Such a payload
+  occupies `NW` CPU words, so the slave's address stride must clear it (see Step A4).
 
 Additional `sti_*.sv` files can be added later; they are picked up automatically by
 the `sti_*.sv` glob in the Makefiles.
@@ -193,23 +228,25 @@ also drop the `SCO_INSTANCES`/`SCO_DOUT_OR`/`SCO_BASE` hooks from `dut.vh`.
 For each such output, expand `templates/sco_template.sv`:
 
 - Name it `sco_<iface>.sv`, module `sco_<iface>`.
-- Keep the **CPU-slave wrapper unchanged** (write-decode of `ENA/MODE/CLR` + the
-  word-addressed expected payload, read-decode of `ERRCNT/CHKCNT` + first-mismatch
-  capture, address self-decode from `SCO_ADDR`). This is what lets the test script
-  configure and read the scoreboard via the CPU bus only.
+- Keep the **CPU-slave wrapper unchanged** (write-decode of `ENA/MODE/SEED/CLR`,
+  read-decode of `ERRCNT/CHKCNT` + word-addressed first-mismatch capture, address
+  self-decode from `SCO_ADDR`). This is what lets the test script configure and read
+  the scoreboard via the CPU bus only.
 - The scoreboard **taps** the DUT output (`in_valid`/`in_ready`/`in_data`) — it must
   never drive the DUT. Wire the tap in `dut.vh`'s `{{SCO_INSTANCES}}`.
-- Replace only the `COMPARE BODY` to match the interface handshake and the
-  expected-value source. **Default = OPTION 2:** the expected payload is supplied
-  over the CPU bus (written by the testcase, or mirrored from what the matching
-  `sti_*` driver injected). **Escape hatch OPTION 1:** build a reference model in the
-  body that recomputes expected from observed inputs — use only when the transform is
-  non-trivial. **OPTION 3:** replay expected beats from a file.
+- Replace only the `COMPARE BODY` to match the interface handshake. **Default:** the
+  scoreboard **regenerates** the expected stream itself from `MODE`/`SEED`/
+  `PATTERN_FILE` — the same `MODE_LFSR`/`MODE_COUNT`/`MODE_FILE` sources as
+  `sti_*.sv` — so no expected payload is pushed over the CPU bus. The testcase just
+  sets the scoreboard's `MODE`/`SEED` to match the driver feeding the DUT.
+  **Alternatives:** build a reference model that recomputes expected from observed
+  DUT inputs (use only when the transform is non-trivial); or, for irregular
+  expected data, add a word-addressed `EXP` register written by the testcase.
 - On a mismatch the scoreboard prints `[ERROR] ...` then `[FINISH] FAIL` + `$finish`
   (self-fail, consistent with `cpu_read_check`). `ERRCNT` is still exposed so a
   testcase may instead defer the verdict with `cpu_read_check(SCO_ERRCNT, 32'd0)`.
-- **Width-generic** like the sti drivers — parameterise by `DATA_W`, word-address the
-  expected/capture payload, never hardcode the width.
+- **Width-generic** like the sti drivers — parameterise by `DATA_W`, derive `NW`/`NB`
+  from it, word-address the capture payload, never hardcode the width.
 
 Additional `sco_*.sv` files are picked up automatically by the `sco_*.sv` glob in the
 Makefiles.
@@ -260,9 +297,10 @@ and no direct access to DUT or sti internals.
 - Status/register outputs are checked with `cpu_read_check` against CPU-readable
   registers. On mismatch it prints `[ERROR] time= ... MISMATCH ...` then
   `[FINISH] FAIL` and `$finish` automatically.
-- **Stream outputs are checked by their `sco_*` scoreboard:** the test script loads
-  the expected payload and enables the scoreboard with `cpu_write`; the scoreboard
-  self-fails on the first mismatched beat. For a deferred verdict, end the run and
+- **Stream outputs are checked by their `sco_*` scoreboard:** the test script sets
+  the scoreboard's `MODE`/`SEED` to match the driver feeding the DUT and enables it
+  with `cpu_write`; the scoreboard regenerates the expected stream and self-fails on
+  the first mismatched beat. For a deferred verdict, end the run and
   assert `cpu_read_check(SCO_ERRCNT, 32'd0)` instead. Either way the test script
   still touches the bench only through the CPU bus.
 - For extra diagnostic context before a manual failure, print an `[ERROR] time= ...`
