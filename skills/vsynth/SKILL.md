@@ -3,6 +3,7 @@ name: vsynth
 description: Synthesize a Verilog module or full IP with Vivado and report resource utilization, Fmax, and power
 effort: medium
 model: sonnet
+allowed-tools: Read, Write, Bash, Grep, Glob
 ---
 
 # Verilog Synthesizer
@@ -22,6 +23,34 @@ The input is a module or IP name. The outputs are:
 | Tool   | Purpose                                      | Check             |
 |--------|----------------------------------------------|-------------------|
 | Vivado | Synthesis, optimization, and reporting       | `vivado -version` |
+
+Before running synthesis, verify Vivado is installed using the check command
+above. If it is missing, **stop and report that Vivado is unavailable — never
+fabricate utilization, timing, power, or Fmax results.** Steps 1–4 (scope,
+filelist, script generation) can still be done without the tool, but Steps 5–7
+must not be reported as completed unless synthesis actually ran. (When invoked
+under `vflow`, this surfaces as `✗ BLOCKED (tool unavailable: vivado)` for the
+Synthesis phase.)
+
+## Arguments
+
+The skill takes a module or IP name. Optional overrides may follow as
+`key=value` pairs:
+
+- `part=<vivado_part>` — target device (default `xczu7ev-ffvc1156-2-e`)
+- `period=<ns>` — clock constraint period in ns (default `2.800`)
+
+Example: `vsynth foo_top part=xc7a100t-csg324-1 period=5.0`. When no overrides
+are given, use the defaults in Step 4.
+
+## Before You Start — Re-run Safety
+
+Check whether `synth/<module>/synth_report.md` already exists:
+
+| State | Detect | Action |
+|-------|--------|--------|
+| **First run** | no `synth/<module>/synth_report.md` | Generate the script and run synthesis normally. |
+| **Already synthesized** | report exists | Do **not** silently re-synthesize. Re-run only if the user explicitly asks, an argument override changed (part/period), or an RTL source in the hierarchy is newer than the report (`find <sources> -newer synth/<module>/synth_report.md`). Otherwise report the existing result and stop. When you do re-run, overwrite the prior outputs in place rather than accumulating stale files. |
 
 ## Step 1 - Identify Synthesis Scope
 
@@ -44,6 +73,19 @@ using `../../` prefixes.
 Example:
 - `./rtl/foo_top.v` → `../../rtl/foo_top.v`
 - `./lib/fifo/fifo.v` → `../../lib/fifo/fifo.v`
+
+Split the list into two groups for the script:
+
+- **Design files** — the top module and project RTL from `./rtl/`. Read these
+  with plain `read_verilog` so they are always elaborated.
+- **Library files** — reusable modules from `./lib/`. Read these with
+  `read_verilog -v` (Vivado treats `-v` files as on-demand *library* files,
+  elaborated only when referenced). Do **not** list the top module under `-v` —
+  a `-v` file is pulled in only if instantiated, which makes the top resolution
+  fragile.
+
+If the whole target is a single library module (no `./rtl/` design files), read
+it as a design file with plain `read_verilog`.
 
 ## Step 3 - Detect Clock Ports
 
@@ -70,9 +112,15 @@ TCL script template:
 # Clock  : <period> ns
 
 # ── Sources ────────────────────────────────────────────────────────────────────
+# Design files (./rtl/) — always elaborated
+read_verilog [list \
+    <rel_path_design1> \
+    <rel_path_design2> \
+]
+# Library files (./lib/) — on-demand library elaboration
 read_verilog -v [list \
-    <rel_path_file1> \
-    <rel_path_file2> \
+    <rel_path_lib1> \
+    <rel_path_lib2> \
 ]
 
 # ── Synthesis ──────────────────────────────────────────────────────────────────
@@ -90,7 +138,7 @@ report_timing_summary -file timing_summary.rpt -max_paths 100 -warn_on_violation
 report_power          -file power.rpt
 ```
 
-For combinational modules (no clock), omit the `create_clock` block and the `report_timing_summary` command.
+For combinational modules (no clock), omit the `create_clock` block and the `report_timing_summary` command. When the hierarchy has no `./lib/` modules, omit the `read_verilog -v` block.
 
 ## Step 5 - Run Synthesis
 
@@ -101,10 +149,34 @@ cd synth/<module>
 vivado -mode batch -nolog -nojournal -source vsynth.tcl 2>&1 | tee vivado_run.log
 ```
 
-Review `vivado_run.log` for errors and warnings:
+Review `vivado_run.log` with grep rather than reading it whole — this keeps the
+counts accurate and the context small:
 
-- **ERROR / CRITICAL WARNING**: stop. Fix the TCL script or filelist, then re-run. Do not proceed to Step 6 with a failed run.
-- **WARNING**: collect all WARNING lines and include them in the report. Do not abort unless they invalidate results.
+- **Errors:** stop the flow if any error is present.
+
+  ```bash
+  grep -E '^(ERROR|CRITICAL WARNING):' vivado_run.log
+  ```
+
+  If this matches, stop. Fix the TCL script or filelist, then re-run. Do not
+  proceed to Step 6 with a failed run.
+
+- **Warnings:** get the total count and a by-code summary; do not abort on
+  warnings unless they invalidate results.
+
+  ```bash
+  grep -cE '^WARNING:' vivado_run.log                                   # total
+  grep -E  '^WARNING:' vivado_run.log \
+    | grep -oE '\[[A-Za-z]+ [0-9]+-[0-9]+\]' | sort | uniq -c | sort -rn  # by code
+  ```
+
+  Put the by-code table and the total in the report's Synthesis Warnings
+  section. Then quote the actual lines for inference-related codes (latch
+  inferred, multi-driven net, unconnected/undriven port), e.g.:
+
+  ```bash
+  grep -E '^WARNING:.*\[Synth 8-327\]' vivado_run.log   # inferred latch
+  ```
 
 ## Step 6 - Parse Reports and Compute Fmax
 
@@ -133,6 +205,10 @@ Fmax (MHz) = 1000.0 / (clock_period_ns - WNS_ns)
 
 Where `WNS_ns` is negative when timing is violated. Report timing status as **PASS** if WNS ≥ 0, **FAIL** otherwise.
 
+This Fmax reflects only the named constraint clock's critical path. If the design
+has multiple clocks (Step 3), note in the report that Fmax applies to the
+constrained clock and that other clock domains are not bounded by this number.
+
 ### Power — `power.rpt`
 
 Extract total on-chip power broken into Dynamic and Static components (mW or W; normalize to mW).
@@ -148,10 +224,11 @@ Write `synth/<module>/synth_report.md` using the template below.
 
 | Field            | Value                    |
 |------------------|--------------------------|
+| Scope            | Single module / Full IP (<N> submodules) |
 | Target Part      | <part>                   |
 | Clock Constraint | <period> ns (<freq> MHz) |
 | Synthesis Mode   | Out-of-Context           |
-| Date             | <date>                   |
+| Date             | <date> (current date)    |
 
 ## Resource Utilization
 
@@ -182,7 +259,17 @@ Write `synth/<module>/synth_report.md` using the template below.
 
 ## Synthesis Warnings
 
-<list notable WARNING messages from vivado_run.log, or "None" if clean>
+Total: <N> warnings (or "None" if clean).
+
+By message code:
+
+| Count | Code | Meaning |
+|-------|------|---------|
+|       |      |         |
+
+Notable inference warnings (quote the actual lines, or "None"):
+
+<latch-inferred / multi-driven / unconnected-port lines, or "None">
 ````
 
 For combinational modules, omit the Timing Summary section entirely.
