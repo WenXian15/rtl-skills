@@ -20,7 +20,17 @@ This guide defines the workflow for diagnosing RTL failures captured in issue re
 | **Single** | IP name + issue number (e.g. `foo issue_003`) | Deep-dive on one specific issue |
 | **Batch** | IP name only (e.g. `foo`) | Process all open issues; group by root cause |
 
-In batch mode, process issues sequentially from lowest to highest number. Group issues that share the same root cause at the end.
+In batch mode, **cluster before tracing** to avoid re-tracing a shared root once
+per failure:
+
+1. Triage every issue file first (cheap — just the `[ERROR]` register address
+   each maps to) and group issues whose failing output is the same or adjacent.
+2. Read the IP-level context (`doc/<ip_name>.md`, `rtl/<ip_name>_top.v`) **once**
+   and reuse it for all clusters.
+3. Trace each cluster's shared signal path **once** (Step 3), then write a report
+   for every issue in the cluster from that single trace.
+
+Process clusters from the lowest issue number upward.
 
 ### Outputs
 
@@ -94,13 +104,13 @@ If the expected value in the testcase is clearly wrong (miscalculated, wrong por
 
 This is the primary debug method. Perform static RTL analysis before considering any simulation run.
 
-Read `./doc/<ip_name>.md` and `./rtl/<ip_name>_top.v` to understand the IP structure.
+Read `./doc/<ip_name>.md` and `./rtl/<ip_name>_top.v` to understand the IP structure (in batch mode read these once and reuse across all clusters).
 
 Starting from the failing output port, trace backwards through the hierarchy using this process:
 
 1. Identify which submodule at the current level drives the failing signal (look at wire assignments and port connections in the instantiation).
-2. Read that submodule's documentation first. If documentation is missing, use `vexplain` to generate it before reading the RTL.
-3. Read the submodule RTL. Find the `always` block or `assign` statement that computes the signal.
+2. Read that submodule's documentation first (generate it with `vexplain` if missing). If the doc explains the signal's behavior and it matches spec, treat this module as correct and do not open its RTL — descend no further on this branch.
+3. Only when the doc is inconclusive, open the RTL: `Grep` the signal name to find the `always`/`assign` that drives it, and read just that block plus its inputs — not the whole file.
 4. List every upstream signal that feeds into that block.
 5. Determine which upstream signal must have carried the wrong value. Only the top-level (CPU-readable) value comes from the `[ERROR]` line — deeper node values are not in the log. Reason from the logic which upstream is implicated; mark its value `unknown` until a Step 4 probe confirms it.
 6. Descend into the submodule that produced the wrong upstream signal and repeat from step 1.
@@ -112,11 +122,7 @@ Continue until one of the following stopping conditions is met:
 - A pipeline stage register holds a wrong value traceable to a known incorrect computation upstream
 - A primary input was driven with a value that the RTL was not designed to handle (testcase issue)
 
-Use the project coding style conventions during tracing:
-- Signals with suffix `_ff` are registers — their value at failure time was latched on the previous clock edge
-- Signals with prefix `s0_`, `s1_`, etc. are pipeline stages — trace across stages using the clock offset between them
-- Bus prefixes `s_`/`m_` identify slave/master interface direction
-- Internal bus names `<master>2<slave>_<bus>` identify the exact module pair involved
+Use `.claude/skills/shared/CodingStyle.md` to interpret signal names while tracing — register suffixes (`_ff`), pipeline-stage prefixes (`s0_`/`s1_`), bus-direction prefixes (`s_`/`m_`), and `<master>2<slave>` internal bus names all carry timing and module-pair information.
 
 Record the full chain as a table:
 
@@ -225,11 +231,13 @@ For `DOC_AMBIGUITY`: quote the conflicting specification sections and describe t
 
 For `INCONCLUSIVE`: state the lowest node in the trace whose value is still unknown, the hierarchical probe that would observe it, and why it could not be run. Do not fall back to guessing one of the other three classes.
 
-## Step 6 - Deduplication (Batch Mode Only)
+## Step 6 - Confirm Root-Cause Groups (Batch Mode Only)
 
-After all issues have been analyzed, scan all debug reports written in this session. Group issues that point to the same root cause location (same file + same module + same block).
-
-A single RTL bug can cause multiple test failures. Identifying shared root causes prevents redundant fix effort.
+The clusters formed up front (Operating Modes) were grouped by failing output. Now
+that each cluster is traced, confirm its members truly share one root-cause
+location (same file + same module + same block) and split any that diverged. A
+single RTL bug can surface as several failures; one confirmed group per root
+prevents redundant fix effort.
 
 ## Step 7 - Write Debug Report(s)
 
@@ -246,10 +254,10 @@ A single link to the corresponding issue file: `issue_NNN_<tcname>.md`.
 One of `RTL_BUG`, `TC_BUG`, `DOC_AMBIGUITY`, or `INCONCLUSIVE`.
 
 **Section: Root Cause Location**
-For `RTL_BUG`: file path, module name, and the specific block (always block description or assign expression). For `TC_BUG`: testcase file and the assertion or stimulus line. For `DOC_AMBIGUITY`: both the RTL file and the documentation section in conflict. For `INCONCLUSIVE`: the deepest module/signal the trace reached before the value became unknown.
+The location for the chosen class, per its definition in Step 5 (file/module/block for `RTL_BUG`; testcase file + line for `TC_BUG`; both conflicting sources for `DOC_AMBIGUITY`; deepest node reached for `INCONCLUSIVE`).
 
 **Section: Root Cause Description**
-Two to four sentences. For `RTL_BUG`: what the logic currently computes vs. what the specification says it should compute. For `TC_BUG`: why the testcase expectation is incorrect. For `DOC_AMBIGUITY`: what both interpretations are and where they conflict. For `INCONCLUSIVE`: which node is unresolved, the hierarchical probe that would observe it, and why it could not be run. Cite the relevant proposal or documentation section by name.
+Two to four sentences expanding the Step 5 finding for the chosen class, citing the relevant proposal or documentation section by name.
 
 **Section: Signal Trace**
 The full chain table from Step 3, filled with signal names, module names, file paths, and values at failure time. Include every level traversed, even if intermediate values were correct.
