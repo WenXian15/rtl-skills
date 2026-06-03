@@ -7,178 +7,167 @@ description: Scan project state to determine phase completion, write flow_status
 
 ## Overview
 
-This skill has two responsibilities:
+Two responsibilities:
 
-1. **State scan** — inspect the project directories to determine what has been completed and what is pending for a given IP, then write `./flow_status.md`.
-2. **Flow execution** — drive the complete RTL design flow by invoking the right skill at the right time, pausing at defined checkpoints, and looping through the debug-fix-retest cycle.
+1. **State scan** — inspect project directories to determine each phase's completion for one IP, then write `./flow_status.md`.
+2. **Flow execution** — drive the flow by invoking the right skill at the right time, pausing at checkpoints, and looping the debug-fix-retest cycle.
 
-The input is an IP name. If not provided, infer it from the top-level requirement file in the project root (a `.md` file that is not `CLAUDE.md`).
+Input is an IP name, optionally followed by a mode keyword.
+
+**Resolve the IP name before anything else — never guess across IPs.** `flow_status.md` and every downstream skill operate on exactly one IP.
+
+- Name given → use it.
+- Not given, exactly one candidate top-level requirement `.md` in the project root (a `.md` that is not `CLAUDE.md`, `flow_status.md`, or other generated/status doc) → use it.
+- Not given, two or more candidates → **stop and ask the user which IP** (list the candidates). No heuristic pick; never run more than one IP per invocation.
+- Not given, no candidate → stop and report none found.
+
+### Invocation modes
+
+| Invocation | Behavior |
+|------------|----------|
+| `vflow [<ip>]` | **Scan and execute** (default): Step 1 → Step 2 → Step 3. |
+| `vflow [<ip>] status` (also `scan`, `--scan-only`, `--dry-run`) | **Scan only**: Step 1 → Step 2, present `flow_status.md`, then stop. Touch no file but `flow_status.md`; invoke no downstream skill. |
 
 ## Step 1 - Scan Project State
 
-Run the following checks to determine the completion status of each phase. All file checks are relative to the project root.
+**Never Read a whole `.md` to compute a status symbol.** All status comes from existence / mtime / `grep`/`awk` counts, which the bundled scanner already does. (Enumerating RTL_BUG *locations* for the Step 2 open-issues display is a targeted `grep` of `debug_summary.md`, not a whole-file read — that is allowed.) Run the scanner once from the project root; do not reissue per-check commands inline:
 
-### Phase detection rules
-
-| Phase | Complete when | Pending when |
-|-------|--------------|--------------|
-| 1 – Architecture | `ddoc/<ip>_arch.md` exists AND `ddoc/` contains at least one `_req.md` AND `rtl/<ip>_top.v` exists | Any of the three is missing |
-| 2 – Design | Every `ddoc/<module>_req.md` has a corresponding `rtl/<module>.v` | Any req file lacks an RTL file |
-| 3 – Implementation | No `rtl/*.v` file (excluding `_top.v`) contains a `//@` marker | Any RTL file still has `//@` markers |
-| 4 – Synthesis | `synth/<ip>/synth_report.md` exists | File is absent |
-| 5 – IP Testing | `issue/<ip>/run_summary.md` exists | File is absent |
-| 6 – Debug | `issue/<ip>/debug_summary.md` exists OR `run_summary.md` shows zero failures | Debug not yet run and failures exist |
-| 7 – Documentation | `doc/<ip>.md` exists | File is absent |
-
-To detect `//@` markers:
 ```bash
-grep -rl '//@' rtl/
+bash <skill-dir>/scan.sh <ip>
 ```
 
-To check failure count in run_summary:
-```bash
-grep 'Failed' issue/<ip>/run_summary.md
-```
+`<skill-dir>` is the directory containing this SKILL.md (the running copy — repo `skills/vflow/` or the global `~/.claude/skills/vflow/`). Resolve `scan.sh` as the sibling of this file. If it cannot be located or it errors out, fall back to performing the same existence/mtime/count checks inline rather than skipping the scan.
 
-### Submodule completion tracking
+It prints one compact line per phase signal: `P1 DONE|PENDING`, `P2 d/n`, `P3 left=N`, `P4 DONE|PENDING`, `P5 RUN|SCAFFOLDED|NONE`, `P7 DONE|PENDING`, and (only when a run exists) `FAILED=N`, `DEBUG=current|stale|none`, plus `RTLBUG=N` when `DEBUG=current`. A `?` value (`FAILED=?`, `RTLBUG=?`) means the count row was malformed/absent in `run_summary.md`/`debug_summary.md` — inspect that file's breakdown manually rather than assuming `0`. `RTLBUG` is read from the classification breakdown in `debug_summary.md`'s Results section; it depends on that section listing a per-class count. If it prints `ERR: …`, you are not at a project root or the layout is non-standard — stop and resolve that.
 
-For Phase 2 and 3, track per-submodule status. A submodule list is derived from the files in `ddoc/` (one per `_req.md`). Cross-reference with `rtl/` to determine design and fill status individually.
+### Phase status from the scan output
+
+| Phase | DONE | Otherwise |
+|-------|------|-----------|
+| 1 – Architecture | `P1 DONE` | PENDING |
+| 2 – Design | `P2 d/n` with `n>0 && d==n` | `⚠ IN PROGRESS (d/n)`; `n==0` means nothing to design yet → PENDING (Phase 1 not DONE), never DONE |
+| 3 – Implementation | `P3 left=0` (and Phase 2 DONE) | `⚠ IN PROGRESS` (markers remain) |
+| 4 – Synthesis | `P4 DONE` | PENDING |
+| 5 – IP Testing | `P5 RUN` | `⚠ IN PROGRESS` if `SCAFFOLDED`, else PENDING |
+| 6 – Debug | `FAILED=0`, or `DEBUG=current` with `RTLBUG=0` | failures + `DEBUG=none`/`stale` → debug pending; `DEBUG=current` with `RTLBUG>0` → `⚠ IN PROGRESS` (awaiting fix) |
+| 7 – Documentation | `P7 DONE` | PENDING |
+
+Caveats (one rule each):
+- **Phase 3** reports marker state only — absence of `//@` is not proof lint/sim passed. Sim-pass is enforced at execution time (Phase 3 pauses on failure), so a re-scan must not upgrade a module on marker absence alone while a known sim failure is unresolved.
+- **Phase 6 currency** — `vtestrun` overwrites `run_summary.md` each re-test while a prior `debug_summary.md` lingers; `DEBUG=stale` means that report predates the latest run and does NOT satisfy Phase 6. Treat debug as not-yet-run for the current failures.
 
 ## Step 2 - Write flow_status.md
 
-Write `./flow_status.md` in the project root. Overwrite any existing file — this is a live status snapshot, not a history.
+Overwrite `./flow_status.md` (a live snapshot, not history).
 
-**Section: header**
-IP name and scan date.
-
-**Section: phase table**
-One row per phase. Status symbols: `✓ DONE`, `⚠ IN PROGRESS (N/M)`, `✗ PENDING`, `✗ BLOCKED (<reason>)`. A phase is BLOCKED when a prerequisite phase is not yet DONE.
-
-**Section: next action**
-A single line stating the immediate next skill invocation and its target (e.g., `vfill → rtl/foo_ctrl.v`). If blocked, state what must complete first.
-
-**Section: open issues** _(only if `issue/<ip>/run_summary.md` exists and shows failures)_
-Number of open failures. If `debug_summary.md` exists, list each `RTL_BUG` root cause location (one line per unique location).
+- **Header** — IP name and scan date.
+- **Phase table** — one row per phase. Symbols: `✓ DONE`, `⚠ IN PROGRESS (N/M)`, `✗ PENDING`, `✗ BLOCKED (<reason>)`, `✗ ERROR (<reason>)`. BLOCKED = a prerequisite phase isn't DONE; ERROR = the phase's skill aborted (see Orchestration Rules).
+- **Next action** — one line for the immediate next step. Normally a skill invocation + target (e.g. `vfill → rtl/foo_ctrl.v`). May instead be a non-skill state: **wait** (parked at a user gate, e.g. `WAITING on user RTL fix (Phase 6B)`), **blocked** (what must finish first), or **error** (which phase errored).
+- **Open issues** _(only if `run_summary.md` shows `FAILED>0`)_ — the Failed count. If `DEBUG=current`, list each `RTL_BUG` root-cause location (one line per unique location); if `stale`, note debug must be re-run.
 
 ## Step 3 - Execute the Flow
 
-After writing `flow_status.md`, determine the next incomplete phase and execute it. Follow the rules below for each phase.
+**Scan-only mode stops here** — present `flow_status.md` and invoke no skill.
 
-A phase that is already DONE must be skipped entirely — do not re-run completed work.
+Otherwise execute the next incomplete phase. A DONE phase is skipped entirely.
 
 ---
 
 ### Phase 1 — Architecture `[CHECKPOINT]`
 
-**Invoke when:** Phase 1 is PENDING.
+**When:** Phase 1 PENDING.
 
-Run `varch` on the top-level IP requirement file. It writes the canonical architecture document `ddoc/<ip>_arch.md` and derives the per-submodule `_req.md` files and `rtl/<ip>_top.v` from it.
+Run `varch` on the IP requirement file; it writes `ddoc/<ip>_arch.md` and derives the per-submodule `_req.md` files and `rtl/<ip>_top.v`.
 
-**Checkpoint:** Present the proposed module decomposition and interface definitions to the user. Wait for explicit approval before proceeding. If the user requests changes, edit `ddoc/<ip>_arch.md` and re-run `varch` — it regenerates only the affected submodules and reports the change set (see `varch` Step 6) — then re-present. Do not advance to Phase 2 without approval.
+**Checkpoint:** present the module decomposition and interfaces; wait for explicit approval. On change requests, edit `ddoc/<ip>_arch.md` and re-run `varch` (it regenerates only affected submodules and reports the change set), then re-present. No advance without approval.
 
 ---
 
 ### Phase 2 — Design `[CHECKPOINT per submodule]`
 
-**Invoke when:** Phase 2 is PENDING or IN PROGRESS.
+**When:** Phase 2 PENDING or IN PROGRESS.
 
-For each submodule in `ddoc/` that does not yet have a corresponding `rtl/<module>.v`:
+For each submodule in `ddoc/` lacking `rtl/<module>.v`:
 
 1. Run `vdesign` on `ddoc/<module>_req.md`.
-2. **Checkpoint:** Present the generated proposal for that submodule. Wait for explicit approval before running the next submodule. If the user requests changes, revise and re-present.
+2. **Checkpoint:** present that proposal; wait for approval before the next submodule. Revise and re-present on change requests.
 
-Process submodules one at a time. Do not batch-approve.
+One at a time. Do not batch-approve.
 
 ---
 
 ### Phase 3 — Implementation `[AUTO]`
 
-**Invoke when:** Phase 3 is PENDING or IN PROGRESS.
+**When:** Phase 3 PENDING or IN PROGRESS.
 
-For each `rtl/<module>.v` other than `<ip>_top.v` that still contains `//@` markers, run `vfill`. The top-level skeleton is structural only — its `//@` entries are integration notes (resolved during IP integration), not logic-fill directions, so `vfill` is never run on `<ip>_top.v`.
+Run `vfill` on each `rtl/<module>.v` (not `<ip>_top.v`) that still has `//@` markers. The top skeleton's `//@` are integration notes, not fill directions — never `vfill` it.
 
-Process all pending submodules sequentially without checkpoints. If `vfill` fails lint or simulation for a submodule, report the failure and pause — do not continue to other submodules while lint/sim errors are unresolved.
+Process pending submodules sequentially, no checkpoints. If `vfill` fails lint or sim, report and pause — do not continue while errors are unresolved.
 
 ---
 
 ### Phase 4 — Synthesis `[AUTO]`
 
-**Invoke when:** Phase 3 is DONE and Phase 4 is PENDING.
+**When:** Phase 3 DONE, Phase 4 PENDING.
 
-Run `vsynth` on the full IP.
-
-No checkpoint. After `vsynth` completes, include the Fmax and utilization summary in the status output and continue automatically.
+Run `vsynth` on the full IP — target the top module `<ip>_top`, so the report lands at `synth/<ip>_top/synth_report.md` (the path the scan checks). No checkpoint; include the Fmax/utilization one-liner in the status and continue.
 
 ---
 
 ### Phase 5 — IP Testing `[AUTO]`
 
-**Invoke when:** Phase 4 is DONE and Phase 5 is PENDING.
+**When:** Phase 4 DONE, Phase 5 PENDING or IN PROGRESS.
 
-Run `vtestgen` to generate the IP-level test suite, then run `vtestrun` to execute all testcases.
-
-No checkpoint between the two skills. After `vtestrun` completes:
-- If `run_summary.md` shows zero failures → skip Phase 6, proceed to Phase 7.
-- If failures exist → proceed to Phase 6.
+Run `vtestgen` (scaffold + generate the suite), then `vtestrun`. If the bench is already scaffolded with `tc_list.md` (was IN PROGRESS), resume — don't re-scaffold. After `vtestrun`, read `FAILED`:
+- `0` → skip Phase 6, go to Phase 7.
+- `>0` → Phase 6.
 
 ---
 
 ### Phase 6 — Debug and Fix Loop `[AUTO + GATE]`
 
-**Invoke when:** Phase 5 is DONE and `run_summary.md` shows failures.
+**When:** Phase 5 DONE and failures exist.
 
-#### 6A — Debug run
+#### 6A — Debug
 Run `vdebug` in batch mode on the IP.
 
 #### 6B — Gate: await user RTL fix
-After `vdebug` writes its reports, present the following to the user:
+Present: total open failures; every `RTL_BUG` (classification, file, module, block, one-line description); `TC_BUG` entries (need testcase fixes); `DOC_AMBIGUITY` entries (need clarification). State explicitly: **"RTL fixes are required before the flow can continue. Signal when fixes are applied."**
 
-- Total open failures
-- Every `RTL_BUG` entry from `debug_summary.md`: classification, file, module, block, and a one-line description
-- Every `TC_BUG` entry: note that these require testcase corrections, not RTL fixes
-- Every `DOC_AMBIGUITY` entry: note that these require clarification
-
-State explicitly: **"RTL fixes are required before the flow can continue. Signal when fixes are applied."**
-
-`TC_BUG` and `DOC_AMBIGUITY` issues do not block progression. If all remaining issues are `TC_BUG` or `DOC_AMBIGUITY` and no `RTL_BUG` remains, skip the gate and proceed to Phase 7.
+`TC_BUG`/`DOC_AMBIGUITY` don't block. If no `RTL_BUG` remains, skip the gate and go to Phase 7.
 
 #### 6C — Re-test after fix
-When the user signals that RTL fixes have been applied:
+On the user's signal:
 
-1. Run `vtestrun` again. The test result is the ground truth that a fix took effect — do not gate on file timestamps, which are unreliable across checkouts and editors.
-2. If new failures exist → run `vdebug` again (only on the new failures) and return to 6B.
-3. If no failures remain → proceed to Phase 7.
+1. Run `vtestrun` again — the test result, not file timestamps, is ground truth that the fix took effect. (This overwrites `run_summary.md`, making the old `debug_summary.md` stale per the currency rule.)
+2. New failures → run `vdebug` on them (writes a current `debug_summary.md`) and return to 6B.
+3. None → Phase 7.
 
-Repeat the loop until either all failures are resolved or the user explicitly chooses to stop.
+Repeat until clear or the user stops.
 
 ---
 
 ### Phase 7 — Documentation `[AUTO]`
 
-**Invoke when:** All prior phases are DONE and no open `RTL_BUG` issues remain.
+**When:** all prior phases DONE and no open `RTL_BUG`. That precondition is established by 6B/6C, or by Phase 5 with zero failures — Phase 7 is reachable only those ways; by any other path, return to Phase 6.
 
-Run `vdoc` on the IP.
-
-After `vdoc` completes, run a final `vflow` scan, write the updated `flow_status.md` showing all phases DONE, and present it to the user as the completion summary.
+Run `vdoc` on the IP. Then re-run **Step 1–2** (scan + write `flow_status.md`) — not the whole skill — and present the all-DONE status as the completion summary.
 
 ---
 
 ## Orchestration Rules
 
-- **Never skip a CHECKPOINT.** Always wait for user confirmation at defined checkpoints before proceeding.
-- **Never re-run a DONE phase** unless the user explicitly requests it.
-- **Never proceed past a lint or simulation failure** in Phase 3.
-- **Never leave probe `$display` statements** in RTL after a vdebug probing run (enforced by vdebug, but verify if in doubt).
-- **Always update `flow_status.md`** after each phase completes.
-- **Never fabricate tool output.** If a phase needs an external tool that is not installed (e.g. Vivado for Phase 4, xsim for Phase 5), mark that phase `✗ BLOCKED (tool unavailable: <tool>)`, report it, and continue scanning the remaining phases instead of producing fake results.
+- **Never skip a CHECKPOINT.**
+- **Never re-run a DONE phase** unless asked.
+- **Never proceed past a Phase 3 lint/sim failure.**
+- **Stop on any phase abort.** A *result* (skill completed, reported failures/timing miss) is handled by the phase's rules; an *abort* (missing input, crashed tool, exception, malformed artifact) is not — stop, mark the phase `✗ ERROR (<reason>)`, surface the skill's output verbatim, never advance. Applies to the `[AUTO]` phases too. (Tool-unavailable is the one pre-classified abort → `✗ BLOCKED`, below.)
+- **No RTL probe cleanup needed.** `vdebug` never edits `rtl/`/`lib/`; its probes live only in a disposable testbench include and `vdebug` removes them.
+- **Always update `flow_status.md`** after each phase.
+- **Never fabricate tool output.** If a required tool is absent (Vivado for P4, xsim for P5), mark that phase `✗ BLOCKED (tool unavailable: <tool>)`, report it, and continue scanning the rest.
 
 ## Known Issues and Fixes
 
-This section records issues encountered when running this skill and how they were resolved.
-
-<!-- Add entries below as issues are discovered. Format:
+<!-- Add entries as discovered. Format:
 ### <short issue title>
-**Symptom:** what was observed
-**Cause:** root cause
-**Fix:** what was done to resolve it
+**Symptom:** / **Cause:** / **Fix:**
 -->
