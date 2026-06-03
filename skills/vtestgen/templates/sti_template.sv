@@ -29,7 +29,8 @@ module sti_{{IFACE}} #(
     parameter STI_ADDR      = 20'h8000,   // this driver's config base in STI space
     parameter DATA_W        = {{DATA_W}},
     parameter PATTERN_FILE  = "",         // hex file for MODE_FILE replay ($readmemh)
-    parameter PATTERN_DEPTH = 256         // entries in the replay memory
+    parameter PATTERN_DEPTH = 256,        // entries in the replay memory
+    parameter RS_LV         = 1'b0        // reset active level; MUST match the DUT
 ) (
     input  wire                 clk,
     input  wire                 rst_n,
@@ -64,7 +65,7 @@ module sti_{{IFACE}} #(
 
     // ----- cpu-slave write decode --------------------------------------------
     always @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst_n == RS_LV) begin
             ena <= 1'b0; rate <= 32'd1; mode <= 32'd0; seed <= 32'd1;
         end else if (cpu_cs && cpu_we) begin
             case (cpu_addr)
@@ -129,8 +130,10 @@ module sti_{{IFACE}} #(
     integer    b;
 
     always @(posedge clk) begin
-        if (!rst_n || clr) begin
-            thr <= 32'd0; lfsr <= seed; bcnt <= 32'd0; pat_idx <= 32'd0;
+        if (rst_n == RS_LV || clr) begin
+            // seed 0 would lock the LFSR at all-zeros; coerce to 1. The mirroring
+            // sco_* applies the identical coercion, so the two stay aligned.
+            thr <= 32'd0; lfsr <= (seed == 32'd0) ? 32'd1 : seed; bcnt <= 32'd0; pat_idx <= 32'd0;
             sent <= 32'd0; out_valid <= 1'b0; out_data <= {DATA_W{1'b0}};
         end else if (out_valid && !out_ready) begin
             // beat pending acceptance: hold data + valid, advance nothing (even

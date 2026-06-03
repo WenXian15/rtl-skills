@@ -4,6 +4,12 @@
 # Emits one compact line per phase signal; reads no file body except the
 # `| Failed | N |` row of run_summary.md. See SKILL.md Step 1 for the
 # status-mapping table that interprets this output.
+#
+# ASSUMES ONE IP PER REPO. Phase 2 globs every ddoc/*_req.md and Phase 3 greps
+# //@ across all of rtl/ — i.e. all submodules in the repo, treated as this IP's.
+# That holds only while the repo contains a single IP. If a second IP is ever
+# added, scope these two checks to <ip>_top's instantiation hierarchy (the other
+# phases are already keyed on <ip>).
 set -u
 
 ip=${1:?usage: scan.sh <ip> (run from project root)}
@@ -50,10 +56,12 @@ if have "issue/${ip}/run_summary.md"; then
   if have "issue/${ip}/debug_summary.md"; then
     if [ "issue/${ip}/debug_summary.md" -nt "issue/${ip}/run_summary.md" ]; then
       echo "DEBUG=current"
-      # Open RTL_BUG count, from the classification breakdown in debug_summary's
-      # Results section (the first RTL_BUG line carrying a number). Reading the
-      # count this way keeps Phase 6 DONE computable without a body Read.
-      rb=$(awk '/RTL_BUG/ {for(i=1;i<=NF;i++) if($i ~ /^[0-9]+$/){print $i; exit}}' \
+      # Open RTL_BUG count, from the Results table in debug_summary.md. vdebug
+      # Step 7 pins that table to one classification per row with the count in
+      # the 2nd column (`| RTL_BUG | N |`), so match that row and take column 3
+      # (same -F'|'/gsub style as the Failed parse above). A different layout
+      # yields empty -> '?', which SKILL.md says to resolve by manual inspection.
+      rb=$(awk -F'|' '$0 ~ /^\| *RTL_BUG *\|/ {gsub(/ /,"",$3); print $3; exit}' \
              "issue/${ip}/debug_summary.md")
       echo "RTLBUG=${rb:-?}"
     else

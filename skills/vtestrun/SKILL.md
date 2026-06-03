@@ -47,12 +47,21 @@ at `001`).
 
 ## Step 3 - Run each testcase
 
-Run from inside `tb/<ip>/`. The cleanest path is a fresh run of each testcase:
+Run from inside `tb/<ip>/`. `vtestrun` is the **authoritative** pass/fail, so it
+must not trust a stale result: the build rule no-ops while a `simulate.log`
+already exists, and `make cleanf` keeps prior PASS sim dirs — so a previously
+passing testcase would report its old verdict and a regression (e.g. one
+introduced by a Phase 6 RTL fix) would be missed. Force a genuinely fresh run by
+wiping all sim dirs first:
 
 ```bash
-make cleanf            # drop stale non-PASS sim dirs (keeps prior PASS results)
-make tb_<module>       # build + elaborate + simulate one testcase
+make clean             # wipe ALL sim dirs (including prior PASS) for a true re-run
+make tb_<module>       # build + elaborate + simulate one testcase, fresh
 ```
+
+`make retest` (= `clean all`) is the one-shot equivalent that runs the whole
+suite fresh. Per-module `make tb_<module>` after `make clean` is preferred here
+because it isolates each testcase's logs.
 
 `make tb_<module>` produces `sim/tb_<module>/` containing `compile.log`,
 `elaborate.log`, and `simulate.log`. After all testcases, `make report` prints a
@@ -113,7 +122,10 @@ Rules for the Simulation Log section:
 
 ## Step 5 - Write the run summary
 
-After all testcases run, write `./issue/<ip>/run_summary.md`:
+After all testcases run, write `./issue/<ip>/run_summary.md`. Keep the Results
+table as the one-metric-per-row shape below: `vflow`'s scanner (`scan.sh`) reads
+the `Failed` count from the `| Failed | N |` row to decide whether Phase 6 is
+needed, so the count must stay in the second column of that row.
 
 ```markdown
 # Test Run Summary: <ip>

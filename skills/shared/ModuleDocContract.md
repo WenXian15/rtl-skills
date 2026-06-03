@@ -95,5 +95,5 @@ A module document must **not** include:
 
 Use `.claude/skills/shared/CodingStyle.md` to interpret names while documenting:
 suffix `_ff` = register; prefix `s0_`/`s1_` = pipeline stage; port prefix
-`s_`/`m_`/`b_` = slave/master/monitor interface; internal bus
+`s_`/`m_` = slave/master interface (CodingStyle §3.2); internal bus
 `<master>2<slave>_<bus>` identifies the connected module pair.

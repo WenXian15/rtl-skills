@@ -44,7 +44,8 @@ module sco_{{IFACE}} #(
     parameter SCO_ADDR      = 20'hC000,   // this scoreboard's config/status base
     parameter DATA_W        = {{DATA_W}},
     parameter PATTERN_FILE  = "",         // hex file for MODE_FILE replay ($readmemh)
-    parameter PATTERN_DEPTH = 256         // entries in the replay memory
+    parameter PATTERN_DEPTH = 256,        // entries in the replay memory
+    parameter RS_LV         = 1'b0        // reset active level; MUST match the DUT
 ) (
     input  wire                 clk,
     input  wire                 rst_n,
@@ -85,7 +86,7 @@ module sco_{{IFACE}} #(
 
     // ----- cpu-slave write decode --------------------------------------------
     always @(posedge clk) begin
-        if (!rst_n) begin
+        if (rst_n == RS_LV) begin
             ena <= 1'b0; mode <= 32'd0; seed <= 32'd1;
         end else if (cpu_cs && cpu_we) begin
             if (cpu_addr == REG_ENA)  ena  <= cpu_din[0];
@@ -148,9 +149,11 @@ module sco_{{IFACE}} #(
     end
 
     always @(posedge clk) begin
-        if (!rst_n || clr) begin
+        if (rst_n == RS_LV || clr) begin
             errcnt <= 32'd0; chkcnt <= 32'd0; fm_data <= {DATA_W{1'b0}};
-            elfsr  <= seed;  ecnt <= 32'd0;  pidx <= 32'd0;
+            // seed 0 would lock the LFSR at all-zeros; coerce to 1 (identical to
+            // the sti_* driver's coercion, so expected and driven streams match).
+            elfsr  <= (seed == 32'd0) ? 32'd1 : seed;  ecnt <= 32'd0;  pidx <= 32'd0;
         end else if (ena && in_valid && in_ready) begin
             chkcnt <= chkcnt + 32'd1;
             if (in_data !== exp) begin

@@ -152,7 +152,7 @@ not just the empty-logic shape. It must include:
 - Empty logic bodies — no implementation.
 
 Port and signal naming follows `CodingStyle §3` (do not re-derive a partial copy
-of those rules here): `s_`/`m_`/`b_` interface prefixes, `_ff` for flip-flops,
+of those rules here): `s_`/`m_` interface prefixes, `_ff` for flip-flops,
 `s0_`/`s1_` pipeline-stage prefixes, etc. Port names themselves come straight from
 the requirement's structural port table (see Step 1).
 

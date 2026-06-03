@@ -16,6 +16,8 @@ Input is an IP name, optionally followed by a mode keyword.
 
 **Resolve the IP name before anything else — never guess across IPs.** `flow_status.md` and every downstream skill operate on exactly one IP.
 
+**Single-IP-repo assumption.** The bundled scanner assumes the repo holds one IP: its Phase 2 and Phase 3 checks scan *all* of `ddoc/*_req.md` and `rtl/` rather than scoping to `<ip>_top`'s hierarchy. With one IP this is exact. If a repo ever holds two IPs, those two phase counts would mix submodules across IPs — scope them to the `<ip>_top` instantiation hierarchy before relying on the scan (see the note in `scan.sh`).
+
 - Name given → use it.
 - Not given, exactly one candidate top-level requirement `.md` in the project root (a `.md` that is not `CLAUDE.md`, `flow_status.md`, or other generated/status doc) → use it.
 - Not given, two or more candidates → **stop and ask the user which IP** (list the candidates). No heuristic pick; never run more than one IP per invocation.
@@ -139,7 +141,7 @@ Present: total open failures; every `RTL_BUG` (classification, file, module, blo
 #### 6C — Re-test after fix
 On the user's signal:
 
-1. Run `vtestrun` again — the test result, not file timestamps, is ground truth that the fix took effect. (This overwrites `run_summary.md`, making the old `debug_summary.md` stale per the currency rule.)
+1. Run `vtestrun` again — the test result, not file timestamps, is ground truth that the fix took effect. `vtestrun` re-runs the **whole** suite fresh (it wipes prior sim dirs), so an RTL fix that regresses a previously-passing testcase is caught, not skipped. (This overwrites `run_summary.md`, making the old `debug_summary.md` stale per the currency rule.)
 2. New failures → run `vdebug` on them (writes a current `debug_summary.md`) and return to 6B.
 3. None → Phase 7.
 

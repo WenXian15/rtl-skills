@@ -130,10 +130,13 @@ Expand `templates/dut.vh`:
   `dut_cpu_dout` wire so it can be muxed.
 - `{{STI_INSTANCES}}` — one instance per `sti_*.sv` (Step A5), each given a unique
   `STI_ADDR` on a **`0x100`-word window** (`STI_BASE`, `STI_BASE+'h100`, ...),
-  sharing the CPU bus.
+  sharing the CPU bus. **Bind `RS_LV` (and `DATA_W`) to the DUT's values** so the
+  driver resets at the DUT's polarity — a driver left at the default `RS_LV=0`
+  while the DUT is `RS_LV=1` is held in reset for the whole run.
 - `{{SCO_INSTANCES}}` — one instance per `sco_*.sv` (Step A6), each given a unique
   `SCO_ADDR` on a **`0x100`-word window** (`SCO_BASE`, `SCO_BASE+'h100`, ...),
-  sharing the CPU bus and tapping a DUT output. Leave empty (and drop `SCO_BASE`)
+  sharing the CPU bus and tapping a DUT output. **Bind `RS_LV` (and `DATA_W`) to
+  the DUT's values**, same as the sti drivers. Leave empty (and drop `SCO_BASE`)
   if no scoreboard is generated.
 - **Each slave owns a 256-word window**, so its registers — including any
   width-dependent payload/capture that spans `NW = DATA_W/32` words — never reach
@@ -390,6 +393,7 @@ Makefile. If no testcase is skipped, write an empty `skip.list` (or omit it).
 - **Verdict:** print `[FINISH] PASS` / `[FINISH] FAIL` then `$finish`; `cpu_read_check`
   auto-fails on mismatch; no token ⇒ FAIL.
 - **Width-generic** `sti_*.sv`, `sco_*.sv`, and `dut.vh` sequences — never hardcode the data width.
+- **Reset-polarity-generic:** `sti_*.sv`/`sco_*.sv` reset against their `RS_LV` parameter, never a hardcoded `!rst_n`; `dut.vh` binds `RS_LV` on every sti/sco instance to the DUT's value (the bench reset in `clock.vh` is already `RS_LV`-driven).
 - **Scoreboards are CPU-slave observers:** a `sco_*.sv` taps a DUT output and never drives it; it is configured/read over the CPU bus like any other slave.
 - **Reusable sequences live in `dut.vh`**, not in testcases.
 - Testbench is SystemVerilog under `tb/`; RTL stays Verilog-2005.

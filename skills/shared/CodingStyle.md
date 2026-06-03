@@ -12,13 +12,11 @@ marked *prefer*.
 ## 0. Language standard
 
 - **RTL (synthesizable `.v` files) must be plain Verilog-2005 (IEEE 1364-2005)
-  only.** Do not use SystemVerilog (IEEE 1800) constructs in design code — no
+  only.** No SystemVerilog (IEEE 1800) constructs in design code — no
   `logic`/`bit`, `always_ff`/`always_comb`/`always_latch`, `typedef`/`struct`/
   `enum`, `interface`, `package`, `.*` port connections, `unique`/`priority`, or
-  `assert` in RTL. Use only Verilog-2005 features (`reg`/`wire`,
-  `always @(posedge clk)`, `generate`, `localparam`, `$clog2`, etc.). Note that
-  Verilog-2005 is still classic Verilog — it does **not** include the
-  SystemVerilog constructs above.
+  `assert`. Use only Verilog-2005 features (`reg`/`wire`,
+  `always @(posedge clk)`, `generate`, `localparam`, `$clog2`, etc.).
 - **Testbenches may use SystemVerilog** (`.sv` files): `logic`, classes,
   `interface`, `program`, constrained-random, assertions, `$display` helpers,
   etc. are all allowed in verification code, never in the DUT.
@@ -80,16 +78,15 @@ localparam LPF_W  = MBIT          // main phase
 | Parameter / localparam | `UPPER_SNAKE` | `TS_W`, `QR_RAM_W` |
 | Registers (flip-flops) | suffix `_ff` | `cal_req_ff`, `pus_s1_id_ff` |
 | FSM next-state (comb) | suffix `_ns` | `cal_state_ns` |
-| Wires / nets | lowercase snake, functional prefix | `sch_cfg_req`, `rr_rd_id` |
+| Wires / nets | lowercase snake, functional prefix | `sch_rd_req`, `rr_rd_id` |
 | Pipeline stage signals | `[<pipe>_]s<N>_<signal>[_ff]` | `pus_s3_count_waddr`, `s2_head_ff` |
 | Hazard / forwarding | `hz_<resource>_p<X>_p<Y>_ff` | `hz_cww_p3_p2_ff` |
-| Memory port bundle | `m_<name>_{st,waddr,wdata,ld,raddr,rdata}` | `m_link_raddr`, `m_head_rdata` |
+| Memory port bundle | `m<name>_{st,waddr,wdata,ld,raddr,rdata}` | `mlink_raddr`, `mhead_rdata` |
 | Generate index | `gi` (declared `genvar gi;`) | |
-| Config inputs | `cfg_*` | `cfg_id`, `cfg_c` |
 | Register-file regs | `rf_*` (+ `_ff`) | `rf_period_1s_ff` |
 | CPU/UPI signals | `upi_*` / `up_*` | `s_upi_addr`, `up_ce` |
 | Master/slave bus (at a port) | `m_*` / `s_*` | `m_valid`, `s_carry` |
-| Inter-module net (in parent) | `<master>2<slave>_<bus>` or `<master>_<bus>` | `ctl2prc_data`, `sch_cfg_req` |
+| Inter-module net (in parent) | `<master>2<slave>_<bus>` or `<master>_<bus>` | `ctl2prc_data`, `sch_rd_req` |
 
 - **Every flip-flop carries the `_ff` suffix; combinational nets never do.**
 - Use functional sub-block prefixes to namespace signals within a module
@@ -167,9 +164,8 @@ Standard buses in this project:
 | Bus | Prefix | Members |
 |-----|--------|---------|
 | CPU / UPI register bus (slave) | `s_upi_*` | `s_upi_we`, `s_upi_oe`, `s_upi_addr`, `s_upi_din`, `s_upi_dout` |
-| Internal config / "configure stream" | `cfg_*` | `cfg_req`, `cfg_id`, `cfg_c`, `cfg_r`, `cfg_q` |
 | Valid/ready stream (master / slave) | `m_*` / `s_*` | `m_valid`, `m_ready`, `m_data` ↔ `s_valid`, `s_ready`, `s_data` |
-| Memory port bundle | `m_<name>_*` | `m_<name>_st`, `_waddr`, `_wdata`, `_ld`, `_raddr`, `_rdata` |
+| Memory port bundle | `m<name>_*` | `m<name>_st`, `_waddr`, `_wdata`, `_ld`, `_raddr`, `_rdata` |
 
 ```verilog
     // UPI CPU register bus (slave) — one banner documents the whole bus
@@ -195,7 +191,7 @@ Name it for the connection it makes instead:
   `u_foo_ctrl`'s master port to `u_foo_proc`'s slave port.
 - **`<master>_<bus>`** — the simplified form, used when the source alone is
   enough to identify the net unambiguously (a single consumer, or a fan-out that
-  no specific destination owns): `sch_cfg_req`, `rr_rd_id`.
+  no specific destination owns): `sch_rd_req`, `rr_rd_id`.
 
 Rules:
 
@@ -212,20 +208,10 @@ Rules:
   form.
 
 ```verilog
-    // parent: u_foo_ctrl (master) → u_foo_proc (slave)
-    wire [DATA_W-1:0] ctl2prc_data;    // ctl drives, prc receives
-    wire              ctl2prc_valid;
-
-    foo_ctrl u_foo_ctrl (
-        .m_data  (ctl2prc_data),       // master port: m_*
-        .m_valid (ctl2prc_valid),
-        ...
-    );
-    foo_proc u_foo_proc (
-        .s_data  (ctl2prc_data),       // slave port: s_*
-        .s_valid (ctl2prc_valid),
-        ...
-    );
+    // parent wires u_foo_ctrl (master) → u_foo_proc (slave)
+    wire [DATA_W-1:0] ctl2prc_data;                       // ctl drives, prc receives
+    foo_ctrl u_foo_ctrl ( .m_data (ctl2prc_data), ... );  // master port: m_*
+    foo_proc u_foo_proc ( .s_data (ctl2prc_data), ... );  // slave port:  s_*
 ```
 
 ## 4. Section banners
@@ -279,7 +265,7 @@ Use a single `//===` line or a `//----` divider for sub-sections.
 
 ```verilog
     assign mem_qr_waddr     = ip_init   ? ip_cnt
-                                        : cfg_id
+                                        : req_id
                                         ;
 ```
 
@@ -287,9 +273,9 @@ Use a single `//===` line or a `//----` divider for sub-sections.
 
 ```verilog
     assign mem_qr_wdata     = ip_init   ? 'd0
-                                        : { cfg_c
-                                          , cfg_r
-                                          , cfg_q
+                                        : { req_c
+                                          , req_r
+                                          , req_q
                                           }
                                         ;
 ```
@@ -412,7 +398,6 @@ Use a single `//===` line or a `//----` divider for sub-sections.
   instances, and thin glue logic.
 - Use a **valid/ready** (`*_valid` / `*_ready`) handshake on streaming
   interfaces; name buses per §3.2.
-- Distribute configuration as a `cfg_*` "configure stream" (`cfg_req` + payload).
 - Name pipelines per §3.1.
 
 ---
@@ -532,10 +517,6 @@ harvests into issue reports but does not use for the pass/fail decision.
 
 ## 21. Enforcement & automation
 
-- Delegate **formatting** (alignment, banners, port order, indentation) to
-  `verible-verilog-format` with a checked-in config rather than maintaining it
-  by hand.
-- Encode **lint rules** (`_ff` on flops, `RS_LV` last, named-only ports,
-  `default_nettype`, no-latch, `default :` present) in `verible-verilog-lint`
-  plus the Verilator flow.
+- **Formatting** (alignment, banners, port order, indentation) → `verible-verilog-format` with a checked-in config, not by hand.
+- **Lint rules** (`_ff` on flops, `RS_LV` last, named-only ports, `default_nettype`, no-latch, `default :`) → `verible-verilog-lint` + the Verilator flow.
 - Run both in CI / a pre-commit hook so new files are checked at submit time.

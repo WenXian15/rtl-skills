@@ -275,7 +275,24 @@ End the file with a blockquote: `> This report identifies root cause only. No co
 Write this file only in batch mode, after all per-issue reports are complete.
 
 **Section: Results**
-A table: total issues analyzed, breakdown by classification (`RTL_BUG` / `TC_BUG` / `DOC_AMBIGUITY` / `INCONCLUSIVE`).
+A table with the total issues analyzed and a per-classification breakdown.
+**Use exactly this shape — one classification per row, the count in its own
+column on the same row** — because `vflow`'s scanner (`scan.sh`) reads the
+`RTL_BUG` count from this table to decide Phase 6, and it parses the first bare
+integer on the line that contains `RTL_BUG`. A header-row layout
+(`| RTL_BUG | TC_BUG | ... |` with counts on the next line) hides the number
+from that parse and forces a manual fallback, so keep the count on the
+`RTL_BUG` row itself:
+
+```markdown
+| Classification | Count |
+|----------------|-------|
+| Total analyzed | <N>   |
+| RTL_BUG        | <N>   |
+| TC_BUG         | <N>   |
+| DOC_AMBIGUITY  | <N>   |
+| INCONCLUSIVE   | <N>   |
+```
 
 **Section: Root Cause Groups**
 One sub-section per unique root cause location. Each sub-section lists:

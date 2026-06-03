@@ -59,8 +59,13 @@ XILINX_DEPS += $(TB_DEPENDENCIES)
 XILINX_DEPS += $(STI_FILES)
 XILINX_DEPS += $(RTL_FILES)
 
+# compile RTL (.v) as Verilog-2005 and the bench (.sv: sti/sco + testcase) as
+# SystemVerilog in separate xvlog passes, rather than relying on extension
+# auto-detect for one mixed call. This keeps the RTL/TB language split explicit
+# (CodingStyle §0) and matches vfill's two-step compile. The two passes are
+# grouped with { } so the run macro's redirection captures both into compile.log.
 xilinx: $(XILINX_DEPS)
-	$(call run, compile, xvlog --incr --relax -i $(TB_FOLDER) $(RTL_FILES) $(STI_FILES) $(TB_FOLDER)/$(TESTCASE).sv)
+	$(call run, compile, { xvlog --incr --relax $(RTL_FILES) && xvlog --incr --relax -sv -i $(TB_FOLDER) $(STI_FILES) $(TB_FOLDER)/$(TESTCASE).sv ; })
 	$(call run, elaborate, xelab --incr --debug typical --relax --mt 8 -L xil_defaultlib -L uvm -L unisims_ver -L unimacro_ver -L secureip --snapshot $(TESTCASE) work.$(TESTCASE))
 	$(call run, simulate, timeout $(TIMEOUT) xsim $(TESTCASE) -runall -onfinish quit)
 	@result=$$(grep -m1 FINISH simulate.log | awk '{print $$2}') ;\
