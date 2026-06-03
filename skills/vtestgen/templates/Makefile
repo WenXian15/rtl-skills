@@ -28,7 +28,7 @@ endif
 # every tb/tb_*.sv is auto-discovered as a runnable testcase, minus any listed in
 # script/skip.list (testcases that failed vtestgen's self-check). One name per
 # line, '#' starts a comment. The .sv files are left in place, just not run.
-SKIP_LIST           := $(if $(wildcard $(SCRIPT_FOLDER)/skip.list),$(shell sed 's/#.*//' $(SCRIPT_FOLDER)/skip.list))
+SKIP_LIST           := $(if $(wildcard $(SCRIPT_FOLDER)/skip.list),$(shell sed 's/\#.*//' $(SCRIPT_FOLDER)/skip.list))
 # match tb_*.sv only (not tb_*.svh probe includes or editor backups), then strip
 # the dir and the .sv extension robustly via notdir/basename.
 TESTCASE            := $(filter-out $(SKIP_LIST),$(notdir $(basename $(wildcard $(TB_FOLDER)/tb_*.sv))))

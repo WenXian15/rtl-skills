@@ -400,9 +400,42 @@ Makefile. If no testcase is skipped, write an empty `skip.list` (or omit it).
 
 ## Known Issues and Fixes
 
-<!-- Append issues found while running this skill. Format:
-### [Tool] - <short title>
-**Symptom:** ...
-**Cause:** ...
-**Fix:** ...
--->
+### [xsim] - unpacked array local to a `function automatic` is not retained per-index
+**Symptom:** A reference-model `sco_*.sv` (or any TB function) that builds a table
+in a local unpacked array — e.g. `reg [31:0] rk [0:31];` inside a
+`function automatic` — produces wrong results; on inspection **every element reads
+back as element 0** (the array does not hold per-index writes across the function
+body in xsim 2020.2). For a cipher reference model this silently runs every round
+with `rk[0]`, so the scoreboard flags a (spurious) DUT mismatch.
+**Cause:** xsim mis-handles unpacked-array automatic-function locals.
+**Fix:** use a **packed** vector and part-select instead:
+`reg [1023:0] rkv; rkv[32*i +: 32] = val;  ... rkv[32*j +: 32]`. Packed locals work
+reliably. (Module-level unpacked `reg` arrays in RTL are fine — this is specific to
+automatic-function locals.)
+
+### [make] - `#` inside `$(shell …)` breaks Makefile parsing
+**Symptom:** `make` aborts with "unterminated call to function 'if': missing ')'".
+**Cause:** GNU make treats `#` as a comment even inside `$(shell …)`, so a `sed`
+program containing `#` (e.g. `sed 's/#.*//'` for the skip.list) truncates the line.
+**Fix:** escape it — `sed 's/\#.*//'`. (Already fixed in `templates/Makefile`; keep
+it escaped if you hand-edit.)
+
+### [xsim] - testcase `RS_LV` must be 1-bit for the reset-release compare
+**Symptom:** every testcase hangs to the watchdog with no output; the test script
+is stuck at `wait (rst_n_clk === ~RS_LV)`.
+**Cause:** declaring `parameter RS_LV = 0` makes it 32-bit, so `~RS_LV = 32'hFFFF_FFFF`
+never `===` the 1-bit `rst_n_clk`.
+**Fix:** declare `parameter RS_LV = 1'b0` in every testcase (as the `tb_basic.sv`
+template does). Keep it 1-bit.
+
+### [xsim] - cannot part-select a sized literal
+**Symptom:** `syntax error near '['` on a line like `cpu_write(REG, 128'h..[127:96])`.
+**Cause:** a part-select/bit-select directly on a sized literal is illegal.
+**Fix:** assign the constant to a `localparam`/`reg` first, then slice that
+(`localparam [127:0] V = 128'h..; ... V[127:96]`).
+
+### [Verilog] - `always @(*)` with a constant-only RHS may never fire
+**Symptom:** an output driven by `always @(*) y = {W{1'b0}};` stays `X` in sim.
+**Cause:** the block has an empty sensitivity list (no signals on the RHS), so it
+is not guaranteed to execute. **Fix:** drive constants with a continuous `assign`
+(make the port a `wire`), or include a real signal in the block.

@@ -15,8 +15,12 @@ set -u
 ip=${1:?usage: scan.sh <ip> (run from project root)}
 have(){ [ -e "$1" ]; }
 
-# Fail loudly if the standard layout is missing — do not emit misleading PENDINGs.
-[ -d rtl ] && [ -d ddoc ] || { echo "ERR: not at a project root (need ./rtl and ./ddoc)"; exit 2; }
+# Fail loudly only if this is not a project root. ./ddoc (the design-input dir)
+# must exist; ./rtl may legitimately be absent on a GREENFIELD project (it is
+# created by Phase 1/varch), so its absence is a normal pre-architecture state
+# (-> P1 PENDING, everything downstream PENDING), not an error. The per-phase
+# `have`/grep checks below already yield PENDING when rtl/ is missing.
+[ -d ddoc ] || { echo "ERR: not at a project root (need ./ddoc)"; exit 2; }
 
 reqs=$(ls ddoc/*_req.md 2>/dev/null | sed 's#.*/##; s/_req\.md$//')
 

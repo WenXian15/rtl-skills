@@ -40,6 +40,8 @@ bash <skill-dir>/scan.sh <ip>
 
 `<skill-dir>` is the directory containing this SKILL.md (the running copy — repo `skills/vflow/` or the global `~/.claude/skills/vflow/`). Resolve `scan.sh` as the sibling of this file. If it cannot be located or it errors out, fall back to performing the same existence/mtime/count checks inline rather than skipping the scan.
 
+**Greenfield is normal.** A brand-new IP has only `./ddoc/<ip>.md` and no `./rtl` yet (Phase 1 creates `rtl/`). The scanner treats a missing `./rtl` as the pre-architecture state and reports `P1 PENDING` (everything downstream PENDING) — it does **not** error. `ERR:` is emitted only when `./ddoc` itself is absent (you are not at a project root). So on a greenfield run, proceed straight to Phase 1 (`varch`); do not treat `P1 PENDING` as a problem.
+
 It prints one compact line per phase signal: `P1 DONE|PENDING`, `P2 d/n`, `P3 left=N`, `P4 DONE|PENDING`, `P5 RUN|SCAFFOLDED|NONE`, `P7 DONE|PENDING`, and (only when a run exists) `FAILED=N`, `DEBUG=current|stale|none`, plus `RTLBUG=N` when `DEBUG=current`. A `?` value (`FAILED=?`, `RTLBUG=?`) means the count row was malformed/absent in `run_summary.md`/`debug_summary.md` — inspect that file's breakdown manually rather than assuming `0`. `RTLBUG` is read from the classification breakdown in `debug_summary.md`'s Results section; it depends on that section listing a per-class count. If it prints `ERR: …`, you are not at a project root or the layout is non-standard — stop and resolve that.
 
 ### Phase status from the scan output
