@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# vflow project-state scanner.
+# Usage: bash scan.sh <ip>   (run from the project root)
+# Emits one compact line per phase signal; reads no file body except the
+# `| Failed | N |` row of run_summary.md. See SKILL.md Step 1 for the
+# status-mapping table that interprets this output.
+#
+# ASSUMES ONE IP PER REPO. Phase 2 globs every ddoc/*_req.md and Phase 3 greps
+# //@ across all of rtl/ — i.e. all submodules in the repo, treated as this IP's.
+# That holds only while the repo contains a single IP. If a second IP is ever
+# added, scope these two checks to <ip>_top's instantiation hierarchy (the other
+# phases are already keyed on <ip>).
+set -u
+
+ip=${1:?usage: scan.sh <ip> (run from project root)}
+have(){ [ -e "$1" ]; }
+
+# Fail loudly only if this is not a project root. ./ddoc (the design-input dir)
+# must exist; ./rtl may legitimately be absent on a GREENFIELD project (it is
+# created by Phase 1/varch), so its absence is a normal pre-architecture state
+# (-> P1 PENDING, everything downstream PENDING), not an error. The per-phase
+# `have`/grep checks below already yield PENDING when rtl/ is missing.
+[ -d ddoc ] || { echo "ERR: not at a project root (need ./ddoc)"; exit 2; }
+
+reqs=$(ls ddoc/*_req.md 2>/dev/null | sed 's#.*/##; s/_req\.md$//')
+
+# Phase 1 — Architecture
+if have "ddoc/${ip}_arch.md" && [ -n "$reqs" ] && have "rtl/${ip}_top.v"; then
+  echo "P1 DONE"
+else
+  echo "P1 PENDING"
+fi
+
+# Phase 2 — Design  (every <module>_req.md has rtl/<module>.v)
+d=0; n=0
+for m in $reqs; do n=$((n+1)); have "rtl/$m.v" && d=$((d+1)); done
+echo "P2 $d/$n"
+
+# Phase 3 — Implementation  (no rtl/*.v except _top.v has //@)
+left=$(grep -rl '//@' rtl/ 2>/dev/null | grep -vc "_top\.v$")
+echo "P3 left=$left"
+
+# Phase 4 — Synthesis  (full-IP target is the top module <ip>_top, so the
+# report lands in synth/<ip>_top/, not synth/<ip>/)
+have "synth/${ip}_top/synth_report.md" && echo "P4 DONE" || echo "P4 PENDING"
+
+# Phase 5 — IP Testing  (run > scaffolded > none)
+if have "issue/${ip}/run_summary.md"; then
+  echo "P5 RUN"
+elif have "tb/${ip}/Makefile" && have "tb/${ip}/tc_list.md"; then
+  echo "P5 SCAFFOLDED"
+else
+  echo "P5 NONE"
+fi
+
+# Failed count + debug currency
+if have "issue/${ip}/run_summary.md"; then
+  failed=$(awk -F'|' '/\| *Failed *\|/ {gsub(/ /,"",$3); print $3}' "issue/${ip}/run_summary.md")
+  echo "FAILED=${failed:-?}"
+  if have "issue/${ip}/debug_summary.md"; then
+    if [ "issue/${ip}/debug_summary.md" -nt "issue/${ip}/run_summary.md" ]; then
+      echo "DEBUG=current"
+      # Open RTL_BUG count, from the Results table in debug_summary.md. vdebug
+      # Step 7 pins that table to one classification per row with the count in
+      # the 2nd column (`| RTL_BUG | N |`), so match that row and take column 3
+      # (same -F'|'/gsub style as the Failed parse above). A different layout
+      # yields empty -> '?', which SKILL.md says to resolve by manual inspection.
+      rb=$(awk -F'|' '$0 ~ /^\| *RTL_BUG *\|/ {gsub(/ /,"",$3); print $3; exit}' \
+             "issue/${ip}/debug_summary.md")
+      echo "RTLBUG=${rb:-?}"
+    else
+      echo "DEBUG=stale"
+    fi
+  else
+    echo "DEBUG=none"
+  fi
+fi
+
+# Phase 7 — Documentation
+have "doc/${ip}.md" && echo "P7 DONE" || echo "P7 PENDING"

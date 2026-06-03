@@ -13,18 +13,24 @@ The input is the IP name. The output is a single Markdown file `./doc/<ip_name>.
 
 ## Step 1 - Collect Documentation Sources
 
-Locate and read all of the following sources for the target IP:
+**Read the module docs as the primary source — do not also read every `_req.md`
+and `_proposal.md`.** The `ModuleDocContract` guarantees `./doc/<module>.md` is
+complete enough to "instantiate, drive, and reason about the module without
+reading its RTL," so it already carries the interface and functional content this
+skill aggregates. Reading the requirement and proposal for every module on top of
+the doc is redundant and the largest token cost here; pull from them only as a
+fallback (see the Read priority below).
 
-| Source | Location | Content |
-|--------|----------|---------|
-| Requirements | `./ddoc/<module>_req.md` | Original per-module requirements |
-| Proposals | `<module>_proposal.md` (same folder as RTL) | Architecture, algorithm, timing diagrams |
-| Module docs | `./doc/<module>.md` | Per-module interface and functional description |
-| Top-level skeleton | `./rtl/<ip_name>_top.v` | Top-level ports and inter-module wiring |
-| Library module docs | `./lib/**/<module>.md` | Reused library module documentation |
-| Synthesis report | `./synth/<ip_name>/synth_report.md` | Utilization, Fmax, and power (optional) |
+| Source | Location | Content | When to read |
+|--------|----------|---------|--------------|
+| Module docs | `./doc/<module>.md` | Per-module interface and functional description | **Always** — primary source |
+| Top-level skeleton | `./rtl/<ip_name>_top.v` | Top-level ports and inter-module wiring | **Always** |
+| Library module docs | `./lib/**/<module>.md` | Reused library module documentation | **Always** (for reused modules) |
+| Synthesis report | `./synth/<ip_name>/synth_report.md` | Utilization, Fmax, power | If present (grep the summary tables, §7) |
+| Proposals | `./ddoc/<module>_proposal.md` | Architecture, algorithm, timing diagrams | **Fallback only** — when the module doc lacks the algorithm/timing detail the Architecture section (§2) needs |
+| Requirements | `./ddoc/<module>_req.md` | Original per-module requirements | **Rarely** — only to resolve a contradiction in a module doc |
 
-Build a list of all submodules in the IP from the top-level skeleton.
+Build a list of all submodules in the IP by walking the instantiation hierarchy from the top-level skeleton, following the shared procedure in `.claude/skills/shared/HierarchyFilelist.md` (use its grep-based extraction — do not read every RTL file).
 
 ## Step 2 - Detect and Fill Documentation Gaps
 
