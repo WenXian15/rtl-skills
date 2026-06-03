@@ -143,7 +143,7 @@ Present: total open failures; every `RTL_BUG` (classification, file, module, blo
 #### 6C — Re-test after fix
 On the user's signal:
 
-1. Run `vtestrun` again — the test result, not file timestamps, is ground truth that the fix took effect. `vtestrun` re-runs the **whole** suite fresh (it wipes prior sim dirs), so an RTL fix that regresses a previously-passing testcase is caught, not skipped. (This overwrites `run_summary.md`, making the old `debug_summary.md` stale per the currency rule.)
+1. Run `vtestrun` again — the test result is ground truth that the fix took effect. `vtestrun` rebuilds every testcase whose RTL/TB sources are newer than its last `simulate.log`; an RTL fix touches `rtl/`, so **all** dependent testcases re-simulate (a regression in a previously-passing testcase is caught, not skipped) while unrelated results are reused. (This overwrites `run_summary.md`, making the old `debug_summary.md` stale per the currency rule.)
 2. New failures → run `vdebug` on them (writes a current `debug_summary.md`) and return to 6B.
 3. None → Phase 7.
 

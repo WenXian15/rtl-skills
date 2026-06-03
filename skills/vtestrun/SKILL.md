@@ -47,21 +47,32 @@ at `001`).
 
 ## Step 3 - Run each testcase
 
-Run from inside `tb/<ip>/`. `vtestrun` is the **authoritative** pass/fail, so it
-must not trust a stale result: the build rule no-ops while a `simulate.log`
-already exists, and `make cleanf` keeps prior PASS sim dirs — so a previously
-passing testcase would report its old verdict and a regression (e.g. one
-introduced by a Phase 6 RTL fix) would be missed. Force a genuinely fresh run by
-wiping all sim dirs first:
+Run from inside `tb/<ip>/`. `vtestrun` is the **authoritative** pass/fail, but it
+does **not** need to re-simulate testcases that `vtestgen` already ran — the
+verdict is the same `[FINISH]` token. Re-running everything would just repeat
+`vtestgen`'s self-check sims. The one thing it must never do is trust a **stale**
+result (a `simulate.log` older than an RTL/TB source it depends on — e.g. after a
+Phase 6 RTL fix), because the build rule no-ops while a `simulate.log` exists and
+`make cleanf` keeps prior PASS dirs.
+
+So **reuse a fresh result, rebuild only a stale (or missing) one** — per testcase:
 
 ```bash
-make clean             # wipe ALL sim dirs (including prior PASS) for a true re-run
-make tb_<module>       # build + elaborate + simulate one testcase, fresh
+# fresh = simulate.log exists AND no RTL/TB source is newer than it
+if [ -f sim/tb_<module>/simulate.log ] && \
+   [ -z "$(find ../../rtl ../../lib *.vh sti_*.sv sco_*.sv tb_<module>.sv \
+                -newer sim/tb_<module>/simulate.log 2>/dev/null)" ]; then
+    : # fresh — read its [FINISH] verdict directly, no re-sim
+else
+    rm -rf sim/tb_<module> && make tb_<module>   # stale/missing — rebuild fresh
+fi
 ```
 
-`make retest` (= `clean all`) is the one-shot equivalent that runs the whole
-suite fresh. Per-module `make tb_<module>` after `make clean` is preferred here
-because it isolates each testcase's logs.
+This makes the **first** run right after `vtestgen` a pure verdict-collection pass
+(no second simulation), while a **post-fix** re-test rebuilds every testcase whose
+RTL/TB changed (a fix touches `../../rtl`, so all dependent testcases re-run and a
+regression is still caught). If you ever want to force the whole suite fresh
+regardless of mtimes, use `make retest` (= `clean all`).
 
 `make tb_<module>` produces `sim/tb_<module>/` containing `compile.log`,
 `elaborate.log`, and `simulate.log`. After all testcases, `make report` prints a
